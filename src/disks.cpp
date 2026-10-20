@@ -72,6 +72,22 @@ static std::string mount_label(const std::string& disk_id) {
 #endif
 }
 
+std::string disks_signature() {
+    std::string s;
+    for (const std::string& n : list_dev([](const char* x) { return is_pass(x) || is_whole_disk(x); })) { s += n; s += ','; }
+#ifndef HOST_TEST
+    static const char* const mounts[] = {"/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+                                         "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7",
+                                         "/mnt/ext0", "/mnt/ext1"};
+    for (const char* m : mounts) {
+        struct statfs sf;
+        if (statfs(m, &sf) != 0) continue;
+        s += '|'; s += m + 5; s += '='; s += sf.f_mntfromname;
+    }
+#endif
+    return s;
+}
+
 std::vector<DiskInfo> disks_discover() {
     std::vector<DiskInfo> disks;
     for (const std::string& n : list_dev(is_whole_disk)) {
