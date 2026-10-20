@@ -1,2 +1,4 @@
 build/
 *.elf
+!release/*.elf
+__pycache__/
