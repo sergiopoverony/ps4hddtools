@@ -18,5 +18,10 @@
   "quit_title": "Shut down the service?",
   "quit_desc": "Any scan in progress will stop. The app starts the service again next time you open it.",
   "yes": "shut down",
-  "cancel": "cancel"
+  "cancel": "cancel",
+  "svc_loader": "Enabling BinLoader for the start…",
+  "err_cfg_write": "Cannot enable BinLoader in the GoldHEN config. Enable it manually: GoldHEN - Servers settings - Enable Payloader Server",
+  "err_loader_closed": "BinLoader is enabled but port 9090 is closed. Restart GoldHEN or toggle the server in its settings",
+  "err_loader_unknown": "BinLoader is not available. Check that GoldHEN is running; enable GoldHEN - Servers settings - Enable Payloader Server",
+  "err_loader_noapply": "BinLoader was enabled in the config but did not start. Enable it in the GoldHEN menu: Servers settings - Enable Payloader Server"
 }

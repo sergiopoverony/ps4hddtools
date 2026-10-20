@@ -311,7 +311,7 @@ static void draw_image(const Image& img, int dstX, int dstY, int dstW, int dstH,
 
 // ---------------------------------------------------------------- состояние службы
 
-enum SvcState { S_CHECK, S_WAITING, S_READY, S_FAILED, S_STOPPED };
+enum SvcState { S_CHECK, S_LOADER, S_WAITING, S_READY, S_FAILED, S_STOPPED };
 static SvcState    g_svc = S_CHECK;
 static std::string g_svcErr;
 static std::string g_svcVersion;
@@ -324,10 +324,15 @@ static uint64_t    g_nextDisks = 0;
 static uint64_t    g_nextSig = 0;
 static std::string g_pendingSig;
 static bool        g_confirmQuit = false;
+static bool        g_weEnabled = false;    // мы включили BinLoader в config.ini GoldHEN и должны вернуть как было
+static bool        g_restored = false;     // вернули BinLoader в выключенное состояние
+static bool        g_noRestore = false;    // после возврата служба пропала: больше не выключаем
+static uint64_t    g_loaderDeadline = 0;
+static uint64_t    g_restoreAt = 0;
 
 static std::string version_str() { return APP_VERSION; }
 
-static void svc_start_payload()
+static void svc_send_now()
 {
     std::string err;
     if (service_send_payload(err)) {
@@ -338,6 +343,26 @@ static void svc_start_payload()
     } else {
         g_svc = S_FAILED;
         g_svcErr = err;
+    }
+    g_redraw = 2;
+}
+
+// Запуск службы: если BinLoader (порт 9090) закрыт, а в config.ini GoldHEN он выключен, включаем его на время запуска.
+static void svc_begin_start(uint64_t now)
+{
+    if (loader_reachable()) { svc_send_now(); return; }
+    int st = goldhen_binloader_state();
+    logf_("svc: BinLoader port 9090 closed, GoldHEN config state = %d", st);
+    if (st == 0 && goldhen_set_binloader(true)) {
+        g_weEnabled = true;
+        g_loaderDeadline = now + 8ULL * 1000000ULL;
+        g_nextPoll = now + 500000ULL;
+        g_svc = S_LOADER;
+    } else {
+        g_svc = S_FAILED;
+        if (st == 0)      g_svcErr = tr("err_cfg_write", "Cannot enable BinLoader in the GoldHEN config. Enable it manually: GoldHEN - Servers settings - Enable Payloader Server");
+        else if (st == 1) g_svcErr = tr("err_loader_closed", "BinLoader is enabled but port 9090 is closed. Restart GoldHEN or toggle the server in its settings");
+        else              g_svcErr = tr("err_loader_unknown", "BinLoader is not available. Check that GoldHEN is running; enable GoldHEN - Servers settings - Enable Payloader Server");
     }
     g_redraw = 2;
 }
@@ -353,13 +378,27 @@ static void svc_step(uint64_t now)
                 g_svc = S_READY; g_pollFails = 0; g_nextDisks = 0; g_nextSig = now + 5000000ULL;
             } else {
                 logf_("svc: running service is %s, app is %s: replacing", v.c_str(), version_str().c_str());
-                svc_start_payload();
+                svc_begin_start(now);
             }
         } else {
             logf_("svc: service not running, starting it");
-            svc_start_payload();
+            if (g_restored) { g_noRestore = true; g_restored = false; logf_("svc: service vanished after BinLoader was switched off: will keep it enabled from now on"); }
+            svc_begin_start(now);
         }
         g_redraw = 2;
+    } else if (g_svc == S_LOADER) {
+        if (now < g_nextPoll) return;
+        g_nextPoll = now + 500000ULL;
+        if (loader_reachable()) {
+            logf_("svc: BinLoader is up after enabling");
+            svc_send_now();
+        } else if (now > g_loaderDeadline) {
+            logf_("svc: BinLoader did not open after enabling in config");
+            if (g_weEnabled) { goldhen_set_binloader(false); g_weEnabled = false; }
+            g_svc = S_FAILED;
+            g_svcErr = tr("err_loader_noapply", "BinLoader was enabled in the config but did not start. Enable it in GoldHEN menu: Servers settings - Enable Payloader Server");
+            g_redraw = 2;
+        }
     } else if (g_svc == S_WAITING) {
         if (now < g_nextPoll) return;
         g_nextPoll = now + 1000000ULL;
@@ -367,6 +406,7 @@ static void svc_step(uint64_t now)
         if (service_query(v, busy) && v == version_str()) {
             logf_("svc: service is up (%s)", v.c_str());
             g_svcVersion = v;
+            g_restoreAt = now + 4ULL * 1000000ULL;
             g_svc = S_READY; g_pollFails = 0; g_nextDisks = 0; g_nextSig = now + 5000000ULL;
             g_redraw = 2;
         } else if (now > g_waitUntil) {
@@ -376,6 +416,12 @@ static void svc_step(uint64_t now)
             g_redraw = 2;
         }
     } else if (g_svc == S_READY) {
+        // Мы включали BinLoader только на время запуска: возвращаем выключенным, когда служба работает.
+        if (g_weEnabled && !g_noRestore && now >= g_restoreAt) {
+            goldhen_set_binloader(false);
+            g_weEnabled = false;
+            g_restored = true;
+        }
         // Диски: читаем список; если службе ещё не велели искать диски, просим.
         if (now >= g_nextDisks) {
             g_nextDisks = now + 3000000ULL;
@@ -443,6 +489,7 @@ static void draw_all()
     std::string st; Color sc = C_DIM;
     switch (g_svc) {
     case S_CHECK:   st = tr("svc_check", "Looking for the service…"); break;
+    case S_LOADER:  st = tr("svc_loader", "Enabling BinLoader for the start…"); break;
     case S_WAITING: st = tr("svc_waiting", "Waiting for the service to start…"); break;
     case S_READY:   st = tr("svc_ready", "Service is running"); sc = C_GREEN; break;
     case S_FAILED:  st = tr("svc_failed", "Could not start the service"); sc = C_RED; break;
