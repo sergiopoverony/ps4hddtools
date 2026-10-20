@@ -16,3 +16,4 @@ void engine_scan_stop();
 
 std::string engine_state_json();
 std::string engine_disks_json();
+std::string engine_sig_json();  // текущая подпись набора устройств (без чтения дисков)

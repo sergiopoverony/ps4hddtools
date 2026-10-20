@@ -65,6 +65,15 @@ check('logo/favicon PNG', get('/logo.png')[:4] == b'\x89PNG' and get('/favicon.i
 check('qr.png и qr_paypal.png отдаются', get('/qr.png')[:4] == b'\x89PNG' and get('/qr_paypal.png')[:4] == b'\x89PNG')
 check('log отдаётся', b'version 1.0.0.17' in get('/api/log'))
 
+# ---------- слежение за сменой дисков
+sig0 = json.loads(get('/api/sig'))['sig']
+post('/api/refresh'); wait_idle()
+check('sig в /api/disks совпадает с /api/sig', json.loads(get('/api/disks'))['sig'] == sig0 and sig0 != '', sig0)
+open(ROOT + '/dev/da7', 'wb').close()
+sig1 = json.loads(get('/api/sig'))['sig']
+check('sig меняется при появлении устройства', sig1 != sig0, (sig0, sig1))
+os.unlink(ROOT + '/dev/da7')
+check('sig возвращается при исчезновении', json.loads(get('/api/sig'))['sig'] == sig0)
 # ---------- 2. неверные запросы
 check('estimate неизвестного диска', post('/api/scan/estimate', {'disk': '../../etc/passwd'})[0] == 400)
 check('start неизвестного диска', post('/api/scan/start', {'disk': 'da9'})[0] == 400)

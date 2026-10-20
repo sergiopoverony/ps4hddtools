@@ -54,6 +54,7 @@ struct EstInfo {
 
 static std::mutex g_m;
 static std::vector<DiskInfo> g_disks;
+static std::string g_sig;  // подпись набора устройств на момент последнего поиска
 static bool g_loaded = false;
 static Job g_job = Job::Idle;
 static std::thread g_worker;
@@ -158,9 +159,11 @@ bool engine_refresh() {
     if (g_job != Job::Idle) return false;
     spawn(Job::Refresh, []() {
         app_log("обновление: поиск дисков и чтение SMART");
+        std::string sig = disks_signature();  // до поиска: если диск сменится во время поиска, это будет замечено
         std::vector<DiskInfo> d = disks_discover();
         std::lock_guard<std::mutex> l2(g_m);
         g_disks = d;
+        g_sig = sig;
         g_loaded = true;
     });
     return true;
@@ -568,10 +571,18 @@ static void smart_json(std::string& o, const SmartReport& r) {
     o += "]}";
 }
 
+std::string engine_sig_json() {
+    std::string o = "{\"sig\":";
+    jstr(o, disks_signature());
+    o += '}';
+    return o;
+}
+
 std::string engine_disks_json() {
     std::lock_guard<std::mutex> l(g_m);
     std::string o = "{\"loaded\":";
     o += g_loaded ? "true" : "false";
+    o += ",\"sig\":"; jstr(o, g_sig);
     o += ",\"disks\":[";
     for (size_t i = 0; i < g_disks.size(); ++i) {
         const DiskInfo& d = g_disks[i];
