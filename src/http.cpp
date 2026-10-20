@@ -133,6 +133,7 @@ static void handle(int fd) {
         else if (path == "/favicon.png" || path == "/favicon.ico")
             respond(fd, 200, "image/png", (const char*)ASSET_ICON_PNG, ASSET_ICON_PNG_LEN, true);
         else if (path == "/api/state") respond_json(fd, 200, engine_state_json());
+        else if (path == "/api/sig") respond_json(fd, 200, engine_sig_json());
         else if (path == "/api/disks") respond_json(fd, 200, engine_disks_json());
         else if (path == "/api/log") {
             size_t n = 8192;

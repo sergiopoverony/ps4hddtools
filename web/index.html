@@ -226,7 +226,7 @@ an:{}}};
 let lang=(()=>{try{const s=localStorage.getItem('lang');if(s&&T[s])return s}catch(e){}return (navigator.language||'en').toLowerCase().startsWith('ru')?'ru':'en'})();
 const $=id=>document.getElementById(id);
 const t=(k,p)=>{let s=(T[lang][k]??T.en[k]??k);if(p)for(const x in p)s=s.split('{'+x+'}').join(p[x]);return s};
-let disks=[],sel='',st=null,timer=null,loadedOnce=false,busyLocal=false;
+let diskSig='',sigPending='',disks=[],sel='',st=null,timer=null,loadedOnce=false,busyLocal=false;
 
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 const nf=(n,d=0)=>Number(n).toLocaleString(lang==='ru'?'ru-RU':'en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
@@ -375,7 +375,7 @@ function updScanDisk(){const d=cur();$('scanDisk').textContent=d?'· '+shortMode
 function setDefaultRange(){const d=cur();updScanDisk();$('rFrom').value=0;$('rTo').value=d?Math.ceil(d.bytes/1e9):0}
 
 async function loadDisks(){
-  const j=await api('/api/disks');disks=j.disks;loadedOnce=j.loaded;
+  const j=await api('/api/disks');disks=j.disks;loadedOnce=j.loaded;diskSig=j.sig||'';
   if(!disks.find(d=>d.id===sel))sel=disks.length?disks[0].id:'';
   renderTabs();renderLeft();setDefaultRange();
 }
@@ -445,6 +445,18 @@ $('hbar').addEventListener('click',e=>{if(e.target.tagName==='BUTTON'){document.
 $('btnLog').onclick=loadLog;
 $('btnQuit').onclick=async()=>{if(!await askModal(t('quitQ'),[],t('qYes'),t('cNo')))return;try{await api('/quit',{})}catch(e){}if(timer)clearInterval(timer);document.body.textContent=t('bye');document.body.style.padding='24px'};
 $('lang').onchange=e=>{lang=e.target.value;try{localStorage.setItem('lang',lang)}catch(x){}applyLang()};
+
+// Слежение за сменой дисков: раз в 5 с спрашиваем лёгкую подпись устройств (диски не читаются).
+// Если она изменилась и осталась такой же при следующем опросе (диск успел определиться), обновляем список.
+setInterval(async()=>{
+  try{
+    if(document.hidden||busyLocal||!loadedOnce||(st&&st.job!=='idle'))return;
+    const j=await api('/api/sig');
+    if(j.sig===diskSig){sigPending='';return}
+    if(j.sig!==sigPending){sigPending=j.sig;return}
+    sigPending='';await doRefresh();
+  }catch(e){}
+},5000);
 
 (async function init(){
   applyLang();
