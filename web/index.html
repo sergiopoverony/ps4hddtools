@@ -77,8 +77,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .map{display:grid;grid-template-columns:repeat(25,1fr);gap:2px;background:#0f1114;padding:4px;border-radius:6px}
 .map i{height:14px;background:var(--b0);border-radius:2px}
 .map i.c1{background:var(--b1)}.map i.c2{background:var(--b2)}.map i.c3{background:var(--b3)}.map i.c4{background:var(--b4)}.map i.c5{background:var(--b5)}.map i.c6{background:var(--b6)}.map i.c7{background:var(--b7)}
-.leg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
-.leg div{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+.mapwrap{display:flex;gap:10px;align-items:stretch;margin-bottom:10px}
+.mapwrap .map{flex:1;min-width:0}
+.leg{display:flex;flex-direction:column;gap:6px;width:190px;flex:none}
+.leg div{flex:1;display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
 .leg i{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid #0008;color:#fff;font:700 11px/12px sans-serif;text-align:center;font-style:normal}
 .leg b{margin-left:auto}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
@@ -96,7 +98,8 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 .box p{margin:8px 0}
 .box .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 @media(max-width:1000px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:520px){.logo{height:48px}.tab{min-width:120px;padding:6px 12px}.map{grid-template-columns:repeat(20,1fr)}.leg{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+@media(max-width:700px){.mapwrap{flex-direction:column}.leg{width:auto;display:grid;grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.logo{height:48px}.tab{min-width:120px;padding:6px 12px}.map{grid-template-columns:repeat(20,1fr)}.mapwrap{flex-direction:column}.leg{width:auto;display:grid;grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
 .support{position:fixed;left:14px;bottom:14px;z-index:5;width:210px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 12px 14px;box-shadow:0 8px 28px rgba(0,0,0,.55);display:none;text-align:center;animation:pop .35s ease-out}
 .support.on{display:block}
 .support b{display:block;margin:0 22px 8px 0;font-size:14px;text-align:left}
@@ -150,8 +153,7 @@ header{flex-direction:column;align-items:stretch}
     </div>
     <div class="msg muted" id="msg"></div>
     <div class="bar"><i id="prog"></i></div>
-    <div class="map" id="map"></div>
-    <div class="leg" id="leg"></div>
+    <div class="mapwrap"><div class="map" id="map"></div><div class="leg" id="leg"></div></div>
     <div class="stats" id="stats"></div>
     <div class="badl" id="badl"></div>
     <div class="lh"><b data-i="log"></b><button class="ghost" id="btnLog" data-i="logRefresh"></button></div>
