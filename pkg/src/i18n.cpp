@@ -101,3 +101,18 @@ std::string tr(const char* key, const char* def)
     if (it != g_strings.end() && !it->second.empty()) return it->second;
     return def;
 }
+
+void i18n_set(const char* code)
+{
+    std::map<std::string, std::string> saved = g_strings;
+    g_strings.clear();
+    if (load_bundled(std::string("/app0/assets/misc/lang_") + code + ".json")) {
+        g_want = code;
+        logf_("i18n: switched to '%s' from menu", code);
+    } else {
+        g_strings = saved;   // файла для этого языка нет - оставляем как было
+        logf_("i18n: no bundled file for '%s', keeping '%s'", code, g_want.c_str());
+    }
+}
+
+std::string i18n_current() { return g_want; }

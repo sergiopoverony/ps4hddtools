@@ -17,6 +17,7 @@ EXTRAFLAGS  := -O2
 APPVER      := $(shell sed -n 's/.*APP_VERSION "\(.*\)".*/\1/p' ../src/version.h)
 
 ASSETS      := assets/fonts/DejaVuSansMono.ttf assets/fonts/LICENSE-DejaVu.txt assets/images/title.png \
+               assets/images/qr_sbp.png assets/images/qr_paypal.png \
                assets/misc/lang_en.json assets/misc/lang_ru.json assets/misc/ps4hddtools.elf
 
 # Системные модули для приложения (без libc.prx приложение сразу вылетает). Берутся из набора OpenOrbis.

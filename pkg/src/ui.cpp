@@ -31,7 +31,6 @@ extern "C" int sceSystemServiceHideSplashScreen(void);
 #define FRAME_DEPTH      4
 
 static const int FONT_PX   = 26;
-static const int ROW_H     = 64;
 static const int MARGIN_X  = 40;
 static const int BANNER_LEFT = 12;
 static const int BANNER_TOP = 16;
@@ -57,6 +56,11 @@ static int      g_frameID = 0;
 static Image    g_banner;
 static bool     g_bannerOk = false;
 static int      g_bannerW  = 0;
+
+// QR-коды для донатов (как в меню веб-интерфейса) - грузятся по требованию, при первом открытии.
+static Image    g_qrSbp, g_qrPaypal;
+static bool     g_qrSbpOk = false, g_qrPaypalOk = false, g_qrTried = false;
+static bool     g_showDonate = false;
 
 // ---------------------------------------------------------------- UTF-8
 
@@ -550,11 +554,43 @@ static Color hist_color(int i)
 
 static void fill(int x, int y, int w, int h, Color c) { g_scene->FillRect(x, y, w, h, c); }
 
+// Скруглённый прямоугольник - полосками по горизонтали (быстро: по пикселю только в углах
+// высотой r, остальное - обычные FillRect). Нужен, чтобы вкладки/кнопки/плитки не выглядели
+// голыми прямоугольниками, как в этапе 2, а ближе к карточкам веб-интерфейса.
+static void fill_rounded(int x, int y, int w, int h, int r, Color c)
+{
+    if (w <= 0 || h <= 0) return;
+    if (r * 2 > w) r = w / 2;
+    if (r * 2 > h) r = h / 2;
+    if (r <= 0) { fill(x, y, w, h, c); return; }
+    fill(x, y + r, w, h - 2 * r, c);
+    for (int yy = 0; yy < r; yy++) {
+        double dy = (double)(r - yy) - 0.5;
+        double dx2 = (double)r * r - dy * dy;
+        int dx = dx2 > 0.0 ? (int)sqrt(dx2) : 0;
+        int left = r - dx;
+        int rowW = w - 2 * left;
+        if (rowW < 0) rowW = 0;
+        fill(x + left, y + yy, rowW, 1, c);
+        fill(x + left, y + h - 1 - yy, rowW, 1, c);
+    }
+}
+
+static void fill_circle(int cx, int cy, int r, Color c)
+{
+    for (int yy = -r; yy <= r; yy++) {
+        double dx2 = (double)r * r - (double)yy * yy;
+        if (dx2 < 0.0) continue;
+        int dx = (int)sqrt(dx2);
+        fill(cx - dx, cy + yy, dx * 2 + 1, 1, c);
+    }
+}
+
 static void draw_panel(int w, int h)
 {
     int x = (FRAME_WIDTH - w) / 2, y = (FRAME_HEIGHT - h) / 2;
-    fill(x - 3, y - 3, w + 6, h + 6, C_EDGE);
-    fill(x, y, w, h, C_PANEL);
+    fill_rounded(x - 3, y - 3, w + 6, h + 6, 18, C_EDGE);
+    fill_rounded(x, y, w, h, 16, C_PANEL);
 }
 
 static void draw_wrapped(const std::string& s, int x, int yTop, int maxc, int maxLines, Color fg, Color bg)
@@ -571,13 +607,17 @@ static void draw_wrapped(const std::string& s, int x, int yTop, int maxc, int ma
 
 // ---------------------------------------------------------------- строка вкладок дисков + меню
 
-static void draw_tab_bar(int y0)
+// x0/w - полоса, оставшаяся справа от логотипа на той же строке (банере), не отдельный ряд.
+static void draw_tab_bar(int x0, int y0, int w)
 {
     int n = (int)g_disks.disks.size();
-    const int menuW = 220, gap = 8;
-    int tabsW = FRAME_WIDTH - 2 * MARGIN_X - menuW - gap;
+    const int menuW = 170, gap = 10;
+    int tabsW = w - menuW - gap;
+    if (tabsW < 0) tabsW = 0;
     int tabW = n > 0 ? tabsW / n : tabsW;
-    int x = MARGIN_X;
+    int tabH = BANNER_H - 12;
+    int ty = y0 + (BANNER_H - tabH) / 2;
+    int x = x0;
 
     for (int i = 0; i < n; i++) {
         const DiskView& d = g_disks.disks[i];
@@ -585,35 +625,35 @@ static void draw_tab_bar(int y0)
         bool activeHere = (d.id == g_selId);
         Color bg = activeHere ? C_PANEL : C_ROW2;
         if (cursorHere) {
-            fill(x, y0, tabW - gap, ROW_H - 6, C_EDGE);
-            fill(x + 3, y0 + 3, tabW - gap - 6, ROW_H - 12, bg);
+            fill_rounded(x, ty, tabW - gap, tabH, 10, C_EDGE);
+            fill_rounded(x + 3, ty + 3, tabW - gap - 6, tabH - 6, 8, bg);
         } else {
-            fill(x, y0, tabW - gap, ROW_H - 6, bg);
+            fill_rounded(x, ty, tabW - gap, tabH, 10, bg);
         }
-        std::string label = fit(short_model(d) + " " + d.id, (tabW - 50) / g_cellW);
-        draw_text(label, x + 14, y0 + 40, activeHere ? C_TEXT : C_DIM, bg);
+        std::string label = fit(short_model(d) + " " + d.id, (tabW - 48) / g_cellW);
+        draw_text(label, x + 16, ty + tabH / 2 + 8, activeHere ? C_TEXT : C_DIM, bg);
 
         Color dot = C_DIM;
         if (d.hasSmart && d.verdict == 0) dot = C_GREEN;
         else if (d.hasSmart && d.verdict == 1) dot = C_AMBER;
         else if (d.hasSmart && d.verdict == 2) dot = C_RED;
         if (g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d.id) dot = C_AMBER;
-        fill(x + tabW - gap - 24, y0 + 25, 14, 14, dot);
+        fill_circle(x + tabW - gap - 18, ty + tabH / 2, 7, dot);
 
         x += tabW;
     }
 
     bool menuCursorHere = (g_focus == FOCUS_TABS && g_tabCursor == n) || g_focus == FOCUS_MENU;
     Color mbg = menuCursorHere ? C_PANEL : C_ROW2;
-    int mx = MARGIN_X + tabsW + gap;
+    int mx = x0 + tabsW + gap;
     if (menuCursorHere) {
-        fill(mx, y0, menuW, ROW_H - 6, C_EDGE);
-        fill(mx + 3, y0 + 3, menuW - 6, ROW_H - 12, mbg);
+        fill_rounded(mx, ty, menuW, tabH, 10, C_EDGE);
+        fill_rounded(mx + 3, ty + 3, menuW - 6, tabH - 6, 8, mbg);
     } else {
-        fill(mx, y0, menuW, ROW_H - 6, mbg);
+        fill_rounded(mx, ty, menuW, tabH, 10, mbg);
     }
     std::string mlabel = "{options} " + tr("menu_title", "Menu");
-    put_center_rich(mx + menuW / 2, mlabel, y0 + 40, C_TEXT, mbg);
+    put_center_rich(mx + menuW / 2, mlabel, ty + tabH / 2 + 8, C_TEXT, mbg);
 }
 
 // ---------------------------------------------------------------- экран: SMART диска
@@ -730,7 +770,7 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     for (int i = 0; i < n; i++) {
         bool cur = (g_focus == FOCUS_ACTIONS && g_actionCursor == i);
         Color bg = cur ? C_EDGE : C_PANEL;
-        fill(ax, ay, itemW, ah, bg);
+        fill_rounded(ax, ay, itemW, ah, 10, bg);
         std::string label;
         switch (items[i]) {
         case AK_FROM: {
@@ -786,8 +826,8 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     int legRowH = mapH / 7;
     for (int i = 1; i <= 7; i++) {
         int ly = mapY + (i - 1) * legRowH;
-        fill(legX, ly, legW, legRowH - 4, C_PANEL);
-        fill(legX + 8, ly + (legRowH - 4) / 2 - 8, 16, 16, hist_color(i));
+        fill_rounded(legX, ly, legW, legRowH - 4, 8, C_PANEL);
+        fill_rounded(legX + 8, ly + (legRowH - 4) / 2 - 8, 16, 16, 4, hist_color(i));
         char key[4]; snprintf(key, sizeof(key), "h%d", i);
         draw_text(fit(tr(key, ""), (legW - 36) / g_cellW), legX + 32, ly + (legRowH - 4) / 2 + 7, C_TEXT, C_PANEL);
     }
@@ -804,50 +844,81 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     int sw = w / 3;
     for (size_t i = 0; i < stats.size(); i++) {
         int cx = x0 + (int)(i % 3) * sw, cy = statY + (int)(i / 3) * 56;
-        fill(cx, cy, sw - 10, 48, C_PANEL);
+        fill_rounded(cx, cy, sw - 10, 48, 10, C_PANEL);
         draw_text(fit(stats[i].k, (sw - 24) / g_cellW), cx + 12, cy + 20, C_DIM, C_PANEL);
         draw_text(fit(stats[i].v, (sw - 24) / g_cellW), cx + 12, cy + 42, C_TEXT, C_PANEL);
     }
 }
 
+static const int MENU_ITEMS = 4;   // обновить диски / язык / донат / выключить службу
+
 static void draw_menu_overlay()
 {
-    int w = 460, h = 170;
+    int w = 460, h = 60 + MENU_ITEMS * 56;
     draw_panel(w, h);
     int x = (FRAME_WIDTH - w) / 2, y = (FRAME_HEIGHT - h) / 2;
-    static const char* keys[2]     = { "menu_refresh",      "menu_quit" };
-    static const char* fallback[2] = { "Refresh disks",     "Shut down the service" };
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < MENU_ITEMS; i++) {
         int ry = y + 30 + i * 56;
         bool cur = (g_menuCursor == i);
-        if (cur) fill(x + 20, ry - 8, w - 40, 44, C_EDGE);
-        draw_text(tr(keys[i], fallback[i]), x + 40, ry + 22, C_TEXT, cur ? C_EDGE : C_PANEL);
+        if (cur) fill_rounded(x + 20, ry - 8, w - 40, 44, 10, C_EDGE);
+        std::string label;
+        switch (i) {
+        case 0: label = tr("menu_refresh", "Refresh disks"); break;
+        case 1: label = tr("menu_lang", "Language") + ": " + (i18n_current() == "ru" ? "Русский" : "English"); break;
+        case 2: label = tr("menu_donate", "Support the project"); break;
+        case 3: label = tr("menu_quit", "Shut down the service"); break;
+        }
+        draw_text(label, x + 40, ry + 22, C_TEXT, cur ? C_EDGE : C_PANEL);
     }
     std::string hint = "{updown} " + tr("hint_select", "select") + "     {cross} " + tr("hint_open", "activate") + "     {circle} " + tr("hint_back", "back");
     put_center_rich(x + w / 2, hint, y + h - 16, C_DIM, C_PANEL);
+}
+
+// QR для донатов - СБП для русского языка, PayPal иначе (как на веб-странице). Грузится лениво,
+// один раз при первом открытии (чтобы не читать PNG, если донат никогда не открывают).
+static void draw_donate_overlay()
+{
+    if (!g_qrTried) {
+        g_qrTried = true;
+        g_qrSbpOk = g_qrSbp.load("/app0/assets/images/qr_sbp.png");
+        g_qrPaypalOk = g_qrPaypal.load("/app0/assets/images/qr_paypal.png");
+    }
+    bool ru = (i18n_current() == "ru");
+    const Image& qr = ru ? g_qrSbp : g_qrPaypal;
+    bool ok = ru ? g_qrSbpOk : g_qrPaypalOk;
+
+    int w = 420, h = 480;
+    draw_panel(w, h);
+    int x = (FRAME_WIDTH - w) / 2, y = (FRAME_HEIGHT - h) / 2;
+    put_center(x + w / 2, tr("menu_donate", "Support the project"), y + 46, C_TEXT, C_PANEL);
+    if (ok) {
+        int qs = 320;
+        draw_image(qr, x + (w - qs) / 2, y + 70, qs, qs, C_PANEL);
+    } else {
+        draw_text(tr("donate_missing", "QR code not found"), x + 40, y + h / 2, C_DIM, C_PANEL);
+    }
+    std::string hint = "{circle} " + tr("hint_back", "back");
+    put_center_rich(x + w / 2, hint, y + h - 24, C_DIM, C_PANEL);
 }
 
 static void draw_all(uint64_t now)
 {
     fill(0, 0, FRAME_WIDTH, FRAME_HEIGHT, C_BG);
 
-    if (g_bannerOk) draw_image(g_banner, BANNER_LEFT, BANNER_TOP, g_bannerW, BANNER_H, C_BG);
-    else draw_text("PS4 HDD TOOLS", MARGIN_X, BANNER_TOP + 44, C_TEXT, C_BG);
+    // Логотип и строка вкладок - на одной строке (раньше вкладки были отдельным рядом ниже,
+    // из-за чего всё выглядело непропорционально просевшим). Статус службы теперь не текст
+    // ("Служба работает" + версия - версия уже есть внизу, в подписи), а один кружок в углу:
+    // зелёный - работает, красный - нет.
+    int logoW;
+    if (g_bannerOk) { draw_image(g_banner, BANNER_LEFT, BANNER_TOP, g_bannerW, BANNER_H, C_BG); logoW = g_bannerW; }
+    else { draw_text("PS4 HDD TOOLS", MARGIN_X, BANNER_TOP + 44, C_TEXT, C_BG); logoW = count_cp("PS4 HDD TOOLS") * g_cellW; }
 
-    // Состояние службы (справа сверху).
-    std::string st; Color sc = C_DIM;
-    switch (g_svc) {
-    case S_CHECK:   st = tr("svc_check", "Looking for the service…"); break;
-    case S_WAITING: st = tr("svc_waiting", "Waiting for the service to start…"); break;
-    case S_READY:   st = tr("svc_ready", "Service is running"); sc = C_GREEN; break;
-    case S_FAILED:  st = tr("svc_failed", "Could not start the service"); sc = C_RED; break;
-    case S_STOPPED: st = tr("svc_stopped", "Service is shut down"); sc = C_AMBER; break;
-    }
-    draw_text(st, FRAME_WIDTH - MARGIN_X - count_cp(st) * g_cellW, BANNER_TOP + 30, sc, C_BG);
-    if (g_svc == S_READY) {
-        std::string v = "v" + g_svcVersion;
-        draw_text(v, FRAME_WIDTH - MARGIN_X - (int)v.size() * g_cellW, BANNER_TOP + 60, C_DIMMER, C_BG);
-    }
+    const int dotReserve = 46;
+    int barX0 = BANNER_LEFT + logoW + 36;
+    int barW = FRAME_WIDTH - MARGIN_X - dotReserve - barX0;
+
+    Color dot = (g_svc == S_READY) ? C_GREEN : C_RED;
+    fill_circle(FRAME_WIDTH - MARGIN_X - 12, BANNER_TOP + BANNER_H / 2, 11, dot);
 
     int y0 = BANNER_TOP + BANNER_H + 20;
     std::string hint;
@@ -857,9 +928,11 @@ static void draw_all(uint64_t now)
         draw_text(tr("svc_hint_fail", "Make sure GoldHEN is running (BinLoader, port 9090). Cross - try again"), MARGIN_X, y0 + 80, C_DIM, C_BG);
     } else if (g_svc == S_STOPPED) {
         draw_text(tr("svc_hint_stopped", "Cross - start the service again"), MARGIN_X, y0 + 30, C_DIM, C_BG);
+    } else if (g_svc == S_CHECK || g_svc == S_WAITING) {
+        draw_text(g_svc == S_CHECK ? tr("svc_check", "Looking for the service…") : tr("svc_waiting", "Waiting for the service to start…"), MARGIN_X, y0 + 30, C_DIM, C_BG);
     } else if (g_svc == S_READY) {
-        draw_tab_bar(y0);
-        int bodyY = y0 + ROW_H + 24;
+        draw_tab_bar(barX0, BANNER_TOP, barW);
+        int bodyY = y0;
         const DiskView* d = sel_disk();
 
         if (!g_disksOk) {
@@ -878,7 +951,7 @@ static void draw_all(uint64_t now)
             draw_screen_scan(*d, rightX, rightW, bodyY, items, mineRunning);
         }
 
-        if (g_focus == FOCUS_MENU) {
+        if (g_focus == FOCUS_MENU || g_showDonate) {
             hint.clear();
         } else if (g_focus == FOCUS_ACTIONS) {
             hint = "{<>} " + tr("hint_switch", "switch") + "     {cross} " + tr("hint_edit", "edit") + "     {updown} " + tr("hint_back", "back");
@@ -897,7 +970,8 @@ static void draw_all(uint64_t now)
     std::string credit = "PS4 HDD Tools v" + version_str() + " Created by SergioPoverony and Mr.Claude";
     draw_text(credit, (FRAME_WIDTH - count_cp(credit) * g_cellW) / 2, 1050, C_DIMMER, C_BG);
 
-    if (g_focus == FOCUS_MENU && g_confirm == CONF_NONE) draw_menu_overlay();
+    if (g_showDonate && g_confirm == CONF_NONE) draw_donate_overlay();
+    else if (g_focus == FOCUS_MENU && g_confirm == CONF_NONE) draw_menu_overlay();
 
     if (g_confirm != CONF_NONE) {
         draw_panel(1040, 340);
@@ -1047,9 +1121,16 @@ bool ui_init()
     // Системная клавиатура (From/To, ГБ): грузим её системные модули заранее, чтобы при первом
     // открытии не было задержки/сбоя. Не критично для остального интерфейса, если не загрузится -
     // просто кнопки полей From/To по Cross ничего не сделают (см. keyboard_edit_number).
+    //
+    // ВАЖНО (нашёл после сверки с рабочим примером - apollo-ps4, реальное PS4-приложение с таким
+    // же диалогом): ORBIS_SYSMODULE_INTERNAL_COMMON_DIALOG - это "внутренний" модуль, его грузит
+    // ОТДЕЛЬНАЯ функция sceSysmoduleLoadModuleInternal(), а не обычный sceSysmoduleLoadModule().
+    // Раньше здесь был вызов обычной функции с приведением типа - CommonDialog из-за этого не
+    // инициализировался, и именно поэтому клавиатура вообще не открывалась (sceImeDialogInit
+    // не может показать диалог без исправно поднятого CommonDialog).
     bool imeMod = sceSysmoduleLoadModule(ORBIS_SYSMODULE_IME_DIALOG) == 0;
-    bool cdMod  = sceSysmoduleLoadModule((enum OrbisSysModule)ORBIS_SYSMODULE_INTERNAL_COMMON_DIALOG) == 0;
-    if (cdMod) sceCommonDialogInitialize();
+    bool cdMod  = sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_COMMON_DIALOG) == 0;
+    if (cdMod) cdMod = sceCommonDialogInitialize() == 0;
     g_imeReady = imeMod && cdMod;
     logf_("ui: ime dialog modules ime=%d commonDialog=%d", imeMod ? 1 : 0, cdMod ? 1 : 0);
 
@@ -1078,7 +1159,9 @@ void ui_pump()
     bool left     = (pressed & ORBIS_PAD_BUTTON_LEFT) != 0;
     bool right    = (pressed & ORBIS_PAD_BUTTON_RIGHT) != 0;
 
-    if (g_confirm != CONF_NONE) {
+    if (g_showDonate) {
+        if (circle || cross) { g_showDonate = false; g_redraw = 2; }
+    } else if (g_confirm != CONF_NONE) {
         if (cross) {
             if (g_confirm == CONF_QUIT) {
                 service_quit();
@@ -1100,16 +1183,21 @@ void ui_pump()
         int diskCount = (int)g_disks.disks.size();
 
         if (g_focus == FOCUS_MENU) {
-            const int menuN = 2;
-            if (up || down) { g_menuCursor = up ? (g_menuCursor - 1 + menuN) % menuN : (g_menuCursor + 1) % menuN; g_redraw = 2; }
+            if (up || down) { g_menuCursor = up ? (g_menuCursor - 1 + MENU_ITEMS) % MENU_ITEMS : (g_menuCursor + 1) % MENU_ITEMS; g_redraw = 2; }
             else if (circle) { g_focus = FOCUS_TABS; g_redraw = 2; }
             else if (cross) {
                 if (g_menuCursor == 0) {
                     service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false;
+                    g_focus = FOCUS_TABS;
+                } else if (g_menuCursor == 1) {
+                    i18n_set(i18n_current() == "ru" ? "en" : "ru");
+                    // Меню остаётся открытым - можно сразу увидеть новую подпись и переключить обратно.
+                } else if (g_menuCursor == 2) {
+                    g_showDonate = true; g_focus = FOCUS_TABS;
                 } else {
-                    g_confirm = CONF_QUIT;
+                    g_confirm = CONF_QUIT; g_focus = FOCUS_TABS;
                 }
-                g_focus = FOCUS_TABS; g_redraw = 2;
+                g_redraw = 2;
             }
         } else if (g_focus == FOCUS_TABS) {
             int total = diskCount + 1; // +1 - вкладка меню

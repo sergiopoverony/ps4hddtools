@@ -6,3 +6,8 @@
 
 void i18n_init(const char* assetDir = "/app0/assets/misc");
 std::string tr(const char* key, const char* def);
+
+// Переключение языка из меню приложения (помимо автоопределения по консоли при старте).
+// code - "ru" или "en". Если встроенного файла для этого кода нет, язык не меняется.
+void i18n_set(const char* code);
+std::string i18n_current();
