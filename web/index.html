@@ -13,10 +13,10 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column}
 header{display:flex;align-items:stretch;background:#000;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .logo{height:64px;display:block}
-.tabs{display:flex;gap:10px;align-items:flex-end;flex:1;padding:8px 12px 0;overflow-x:auto;min-width:0}
-.tab{background:var(--tab);color:var(--text);border:0;border-radius:10px 10px 0 0;padding:8px 18px 9px;min-width:150px;text-align:left;cursor:pointer;border-bottom:3px solid transparent;font:inherit}
-.tab:hover{background:#464b55}
-.tab.active{background:#4a4f5a;border-bottom-color:var(--accent)}
+.tabs{display:flex;gap:10px;align-items:center;flex:1;padding:6px 14px;overflow-x:auto;min-width:0}
+.tab{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-bottom:3px solid var(--line);border-radius:8px;padding:6px 16px;min-width:150px;min-height:50px;display:flex;flex-direction:column;justify-content:center;text-align:left;cursor:pointer;font:inherit}
+.tab:hover{background:#2c313a}
+.tab.active{background:#2c313a;border-color:#3b414c;border-bottom-color:var(--accent)}
 .tab b{display:block;font-size:15px;letter-spacing:.3px;white-space:nowrap}
 .tab .st{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:2px;white-space:nowrap}
 .tab small{display:block;color:var(--muted);font-size:11px;white-space:nowrap}
