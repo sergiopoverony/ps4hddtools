@@ -1,4 +1,5 @@
 #include "platform.h"
+#include "log.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -33,11 +34,16 @@ void notify(const char* fmt, ...) {
 }
 
 static int g_ticks = 0;
+#ifndef HOST_TEST
+static bool g_tick_err = false;
+#endif
 int host_test_ticks() { return g_ticks; }
 
 void keep_awake_tick() {
     ++g_ticks;
 #ifndef HOST_TEST
-    sceSystemServicePowerTick();
+    int r = sceSystemServicePowerTick();
+    if (g_ticks == 1) app_log("защита от сна: sceSystemServicePowerTick вернул %d (0 = принято)", r);
+    else if (r != 0 && !g_tick_err) { g_tick_err = true; app_log("защита от сна: sceSystemServicePowerTick вернул %d", r); }
 #endif
 }

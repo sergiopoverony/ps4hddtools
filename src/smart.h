@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -42,3 +43,7 @@ bool smart_query(const char* pass_path, SmartReport& out);
 void smart_parse(const uint8_t smart[512], const uint8_t* thresh, SmartReport& rep);
 void smart_assess(SmartReport& rep);
 const char* smart_attr_name(uint8_t id);
+
+// Разбор ответа диска на SMART RETURN STATUS из sense-данных SAT (дескриптор 0x09).
+// 0 исправен, 1 скоро откажет, -1 не удалось разобрать.
+int smart_status_from_sense(const uint8_t* sense, size_t len);

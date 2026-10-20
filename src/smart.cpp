@@ -4,6 +4,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -131,6 +132,20 @@ void smart_assess(SmartReport& rep) {
     rep.verdict = worst;
 }
 
+int smart_status_from_sense(const uint8_t* sense, size_t len) {
+    if (!sense || len < 22 || (sense[0] & 0x7F) != 0x72) return -1;
+    size_t end = std::min<size_t>(len, 8 + (size_t)sense[7]);
+    for (size_t off = 8; off + 2 <= end; off += 2 + sense[off + 1]) {
+        if (sense[off] == 0x09 && sense[off + 1] >= 0x0C && off + 14 <= len) {
+            uint8_t mid = sense[off + 9], high = sense[off + 11];
+            if (mid == 0x4F && high == 0xC2) return 0;
+            if (mid == 0xF4 && high == 0x2C) return 1;
+            return -1;
+        }
+    }
+    return -1;
+}
+
 // ---------------------------------------------------------------- доступ к диску
 
 static std::string trim_ident(const uint8_t id[512], unsigned first_word, unsigned words) {
@@ -221,7 +236,7 @@ struct CamDev {
 };
 
 // SAT ATA PASS-THROUGH(16). Поля CDB для чтения данных совпадают с подтверждённым на консоли вариантом.
-static bool sat16(const CamDev& d, const AtaCmd& c, uint8_t* data, size_t len, uint8_t sense_out[18]) {
+static bool sat16(const CamDev& d, const AtaCmd& c, uint8_t* data, size_t len, uint8_t sense_out[32], unsigned* cam_status = nullptr) {
     union ccb ccb;
     memset(&ccb, 0, sizeof(ccb));
     ccb.ccb_h.func_code = XPT_SCSI_IO;
@@ -247,8 +262,9 @@ static bool sat16(const CamDev& d, const AtaCmd& c, uint8_t* data, size_t len, u
     cdb[13] = c.device;
     cdb[14] = c.command;
     if (cam_ioctl(d.fd, &ccb) != 0) return false;
-    if (sense_out) memcpy(sense_out, &ccb.csio.sense_data, 18);
+    if (sense_out) memcpy(sense_out, &ccb.csio.sense_data, 32);
     unsigned cs = ccb.ccb_h.status & CAM_STATUS_MASK;
+    if (cam_status) *cam_status = cs;
     if (c.ck_cond) return cs == CAM_REQ_CMP || cs == CAM_SCSI_STATUS_ERROR;
     return cs == CAM_REQ_CMP && ccb.csio.scsi_status == SCSI_STATUS_OK;
 }
@@ -298,6 +314,30 @@ static bool native_ata(const CamDev& d, const AtaCmd& c, uint8_t* data, size_t l
     ccb.ataio.dxfer_len = (uint32_t)len;
     if (cam_ioctl(d.fd, &ccb) != 0) return false;
     return (ccb.ccb_h.status & CAM_STATUS_MASK) == CAM_REQ_CMP;
+}
+
+// SMART RETURN STATUS для диска на прямом ATA: результат в регистрах lba_mid/lba_high.
+static int native_status(const CamDev& d) {
+    union ccb ccb;
+    memset(&ccb, 0, sizeof(ccb));
+    ccb.ccb_h.func_code = XPT_ATA_IO;
+    ccb.ccb_h.path_id = d.path;
+    ccb.ccb_h.target_id = d.target;
+    ccb.ccb_h.target_lun = d.lun;
+    ccb.ccb_h.timeout = 10000;
+    ccb.ccb_h.flags = CAM_DIR_NONE;
+    ccb.ataio.cmd.flags = CAM_ATAIO_NEEDRESULT;
+    ccb.ataio.cmd.command = 0xB0;
+    ccb.ataio.cmd.features = 0xDA;
+    ccb.ataio.cmd.lba_mid = 0x4F;
+    ccb.ataio.cmd.lba_high = 0xC2;
+    if (cam_ioctl(d.fd, &ccb) != 0) return -1;
+    if ((ccb.ccb_h.status & CAM_STATUS_MASK) != CAM_REQ_CMP) return -1;
+    uint8_t mid = ccb.ataio.res.lba_mid, high = ccb.ataio.res.lba_high;
+    app_log("SMART: RETURN STATUS (ATA) lba_mid=0x%02X lba_high=0x%02X", mid, high);
+    if (mid == 0x4F && high == 0xC2) return 0;
+    if (mid == 0xF4 && high == 0x2C) return 1;
+    return -1;
 }
 
 static bool ata_read512(const CamDev& d, const AtaCmd& c, uint8_t out[512]) {
@@ -404,21 +444,19 @@ bool smart_query(const char* path, SmartReport& rep) {
             AtaCmd st;
             st.command = 0xB0; st.features = 0xDA; st.lba_mid = 0x4F; st.lba_high = 0xC2;
             st.count = 0; st.data_in = false; st.ck_cond = true;
-            uint8_t sense[18];
+            uint8_t sense[32];
             memset(sense, 0, sizeof(sense));
-            if (sat16(d, st, nullptr, 0, sense) && (sense[0] & 0x7F) == 0x72) {
-                for (int off = 8; off + 14 <= 8 + sense[7] && off + 14 <= 18; ) {
-                    if (sense[off] == 0x09) {
-                        uint8_t mid = sense[off + 9], high = sense[off + 11];
-                        if (mid == 0x4F && high == 0xC2) rep.status = 0;
-                        else if (mid == 0xF4 && high == 0x2C) rep.status = 1;
-                        break;
-                    }
-                    off += 2 + sense[off + 1];
-                }
-            }
-            app_log("SMART: RETURN STATUS = %d (0 исправен, 1 скоро откажет, -1 неизвестно)", rep.status);
+            unsigned cs = 0;
+            bool ok = sat16(d, st, nullptr, 0, sense, &cs);
+            rep.status = ok ? smart_status_from_sense(sense, sizeof(sense)) : -1;
+            app_log("SMART: RETURN STATUS (SAT) выполнен=%d CAM=0x%x sense=%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                    ok ? 1 : 0, cs, sense[0], sense[1], sense[2], sense[3], sense[4], sense[5], sense[6], sense[7], sense[8],
+                    sense[9], sense[10], sense[11], sense[12], sense[13], sense[14], sense[15], sense[16], sense[17], sense[18],
+                    sense[19], sense[20], sense[21]);
+        } else {
+            rep.status = native_status(d);
         }
+        app_log("SMART: RETURN STATUS = %d (0 исправен, 1 скоро откажет, -1 неизвестно)", rep.status);
     } else {
         rep.error = "smart";
         app_log("SMART: SMART DATA не получены");
