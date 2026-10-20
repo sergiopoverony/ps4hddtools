@@ -1,8 +1,6 @@
 {
   "svc_check": "Ищу службу…",
   "svc_starting": "Запускаю службу…",
-  "svc_wait_loader": "Жду включения BinLoader…",
-  "svc_hint_wait_loader": "Проверяю сам… (осталось %d с). Circle - отмена",
   "svc_waiting": "Жду запуска службы…",
   "svc_ready": "Служба работает",
   "svc_failed": "Не удалось запустить службу",

@@ -314,7 +314,7 @@ static void draw_image(const Image& img, int dstX, int dstY, int dstW, int dstH,
 
 // ---------------------------------------------------------------- состояние службы
 
-enum SvcState { S_CHECK, S_WAIT_LOADER, S_WAITING, S_READY, S_FAILED, S_STOPPED };
+enum SvcState { S_CHECK, S_WAITING, S_READY, S_FAILED, S_STOPPED };
 static SvcState    g_svc = S_CHECK;
 static std::string g_svcErr;
 static std::string g_svcVersion;
@@ -335,12 +335,8 @@ static std::vector<std::string> g_diagLines;
 // два подключения к BinLoader подряд ловили гонку: первое (проверочное) успевало закрыться
 // как раз к моменту, когда начиналось второе, и то отваливалось с ECONNREFUSED).
 // Если BinLoader GoldHEN (порт 9090) выключен, приложение не может включить его само
-// (GoldHEN не перечитывает config.ini на лету). Вместо немедленной ошибки ждём и реально пробуем
-// отправить payload раз в секунду (пока пользователь сам включает порт в меню GoldHEN); как только
-// отправка пройдёт - продолжаем как обычно, без повторного нажатия Cross.
-static uint64_t g_waitLoaderUntil = 0;
-static uint64_t g_nextLoaderPoll = 0;
-
+// (GoldHEN не перечитывает config.ini на лету) - показываем ошибку с подсказкой,
+// Cross повторяет попытку вручную.
 static void svc_send_now()
 {
     std::string err;
@@ -350,16 +346,11 @@ static void svc_send_now()
         g_waitUntil = sceKernelGetProcessTime() + 25ULL * 1000000ULL;
         g_nextPoll = sceKernelGetProcessTime() + 1500000ULL;
         g_svcErr.clear();
-    } else if (connectFailed) {
-        logf_("svc: BinLoader port 9090 is closed, waiting for it to open");
-        uint64_t now = sceKernelGetProcessTime();
-        g_svc = S_WAIT_LOADER;
-        g_waitLoaderUntil = now + 120ULL * 1000000ULL;  // 2 минуты - успеть зайти в меню GoldHEN и включить
-        g_nextLoaderPoll = now + 1000000ULL;
-        g_svcErr.clear();
     } else {
         g_svc = S_FAILED;
-        g_svcErr = err;
+        g_svcErr = connectFailed
+            ? tr("err_loader_off", "BinLoader is off. Enable it: GoldHEN - Servers settings - Enable Payloader Server")
+            : err;
     }
     g_redraw = 2;
 }
@@ -384,30 +375,6 @@ static void svc_step(uint64_t now)
             svc_start_payload();
         }
         g_redraw = 2;
-    } else if (g_svc == S_WAIT_LOADER) {
-        // Сами пробуем отправить payload раз в секунду, пока пользователь включает BinLoader в меню
-        // GoldHEN. Это настоящая попытка отправки (а не отдельная "проверка порта"), чтобы не ловить
-        // гонку из двух подряд подключений. Таймер ожидания (g_waitLoaderUntil) трогаем только при
-        // первом входе в это состояние, не на каждой попытке.
-        if (now < g_nextLoaderPoll) return;
-        g_nextLoaderPoll = now + 1000000ULL;
-        std::string err; bool connectFailed = false;
-        if (service_send_payload(err, &connectFailed)) {
-            logf_("svc: BinLoader port opened, payload sent");
-            g_svc = S_WAITING;
-            g_waitUntil = now + 25ULL * 1000000ULL;
-            g_nextPoll = now + 1500000ULL;
-            g_svcErr.clear();
-        } else if (!connectFailed) {
-            // Порт открылся, но отправка не удалась по другой причине - это настоящая ошибка.
-            g_svc = S_FAILED;
-            g_svcErr = err;
-        } else if (now > g_waitLoaderUntil) {
-            logf_("svc: gave up waiting for BinLoader");
-            g_svc = S_FAILED;
-            g_svcErr = tr("err_loader_off", "BinLoader is off. Enable it: GoldHEN - Servers settings - Enable Payloader Server");
-        }
-        g_redraw = 2; // обновляем обратный отсчёт на экране
     } else if (g_svc == S_WAITING) {
         if (now < g_nextPoll) return;
         g_nextPoll = now + 1000000ULL;
@@ -491,7 +458,6 @@ static void draw_all(uint64_t now)
     std::string st; Color sc = C_DIM;
     switch (g_svc) {
     case S_CHECK:   st = tr("svc_check", "Looking for the service…"); break;
-    case S_WAIT_LOADER: st = tr("svc_wait_loader", "Waiting for BinLoader…"); sc = C_AMBER; break;
     case S_WAITING: st = tr("svc_waiting", "Waiting for the service to start…"); break;
     case S_READY:   st = tr("svc_ready", "Service is running"); sc = C_GREEN; break;
     case S_FAILED:  st = tr("svc_failed", "Could not start the service"); sc = C_RED; break;
@@ -509,13 +475,7 @@ static void draw_all(uint64_t now)
 
     int y0 = BANNER_TOP + BANNER_H + 30;
 
-    if (g_svc == S_WAIT_LOADER) {
-        draw_text(tr("err_loader_off", "BinLoader is off. Enable it: GoldHEN - Servers settings - Enable Payloader Server"), MARGIN_X, y0 + 30, C_AMBER, C_BG);
-        int left = (int)((g_waitLoaderUntil > now ? g_waitLoaderUntil - now : 0) / 1000000ULL);
-        char b[96];
-        snprintf(b, sizeof(b), tr("svc_hint_wait_loader", "Checking automatically… (%d s left). Circle - cancel").c_str(), left);
-        draw_text(b, MARGIN_X, y0 + 80, C_DIM, C_BG);
-    } else if (g_svc == S_FAILED) {
+    if (g_svc == S_FAILED) {
         draw_text(g_svcErr, MARGIN_X, y0 + 30, C_RED, C_BG);
         draw_text(tr("svc_hint_fail", "Make sure GoldHEN is running (BinLoader, port 9090). Cross - try again"), MARGIN_X, y0 + 80, C_DIM, C_BG);
     } else if (g_svc == S_STOPPED) {
@@ -669,15 +629,9 @@ void ui_pump()
         } else if (circle) { g_confirmQuit = false; g_redraw = 2; }
     } else if (options && g_svc == S_READY) {
         g_confirmQuit = true; g_redraw = 2;
-    } else if (g_svc == S_WAIT_LOADER && circle) {
-        logf_("svc: user cancelled waiting for BinLoader");
-        g_svc = S_FAILED;
-        g_svcErr = tr("err_loader_off", "BinLoader is off. Enable it: GoldHEN - Servers settings - Enable Payloader Server");
-        g_redraw = 2;
     } else if (cross) {
         if (g_svc == S_READY) { service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false; g_redraw = 2; }
         else if (g_svc == S_FAILED || g_svc == S_STOPPED) { g_svc = S_CHECK; g_redraw = 2; }
-        else if (g_svc == S_WAIT_LOADER) { g_nextLoaderPoll = now; g_redraw = 2; } // проверить порт сразу
     }
 
     static uint64_t lastTick = 0;

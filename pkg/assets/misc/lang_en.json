@@ -1,8 +1,6 @@
 {
   "svc_check": "Looking for the service…",
   "svc_starting": "Starting the service…",
-  "svc_wait_loader": "Waiting for BinLoader to be enabled…",
-  "svc_hint_wait_loader": "Checking automatically… (%d s left). Circle - cancel",
   "svc_waiting": "Waiting for the service to start…",
   "svc_ready": "Service is running",
   "svc_failed": "Could not start the service",
