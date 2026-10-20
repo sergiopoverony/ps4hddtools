@@ -1,0 +1,6 @@
+build/
+sce_sys/
+eboot.bin
+pkg.gp4
+*.pkg
+assets/misc/ps4hddtools.elf
