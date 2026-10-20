@@ -1,0 +1,97 @@
+# Сборка PKG приложения PS4 HDD Tools (оболочка для службы ps4hddtools).
+# Нужен OpenOrbis PS4 Toolchain и переменная OO_PS4_TOOLCHAIN. Сборка: make (в этой папке).
+# Перед сборкой соберите службу в корне проекта (make), чтобы был ../release/ps4hddtools.elf.
+
+TITLE       := PS4 HDD Tools
+TITLE_ID    := BREW00089
+CONTENT_ID  := IV0000-BREW00089_00-PS4HDDTOOLS00000
+LIBS        := -lc -lkernel -lc++ -lSceNet -lSceVideoOut -lSceSysmodule -lSceFreeType -lScePad -lSceUserService -lSceSystemService
+EXTRAFLAGS  := -O2
+
+# Версия приложения = версия службы (из ../src/version.h): приложение сравнивает их при запуске.
+APPVER      := $(shell sed -n 's/.*APP_VERSION "\(.*\)".*/\1/p' ../src/version.h)
+
+ASSETS      := assets/fonts/DejaVuSansMono.ttf assets/fonts/LICENSE-DejaVu.txt assets/images/title.png \
+               assets/misc/lang_en.json assets/misc/lang_ru.json assets/misc/ps4hddtools.elf
+
+TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
+PROJDIR     := src
+INTDIR      := build/obj
+
+CFILES      := $(wildcard $(PROJDIR)/*.c)
+CPPFILES    := $(wildcard $(PROJDIR)/*.cpp)
+OBJS        := $(patsubst $(PROJDIR)/%.c, $(INTDIR)/%.o, $(CFILES)) $(patsubst $(PROJDIR)/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
+
+CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -c $(EXTRAFLAGS) -DAPP_VERSION=\"$(APPVER)\" -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include
+CXXFLAGS    := $(CFLAGS) -isystem $(TOOLCHAIN)/include/c++/v1
+LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
+
+_unused     := $(shell mkdir -p $(INTDIR) sce_sys/about assets/misc)
+
+UNAME_S     := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+		CC      := clang
+		CCX     := clang++
+		LD      := ld.lld
+		CDIR    := linux
+endif
+ifeq ($(UNAME_S),Darwin)
+		CC      := /usr/local/opt/llvm/bin/clang
+		CCX     := /usr/local/opt/llvm/bin/clang++
+		LD      := /usr/local/opt/llvm/bin/ld.lld
+		CDIR    := macos
+endif
+ifneq (,$(findstring MSYS_NT,$(UNAME_S)))
+		CC      := clang
+		CCX     := clang++
+		LD      := ld.lld
+		CDIR    := windows
+endif
+
+all: $(CONTENT_ID).pkg
+
+$(CONTENT_ID).pkg: pkg.gp4
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build $< .
+
+pkg.gp4: eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_sys/pic1.png $(ASSETS)
+	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
+
+# Служба берётся из корня проекта.
+assets/misc/ps4hddtools.elf: ../release/ps4hddtools.elf
+	cp $< $@
+
+# Иконка и фон запуска берутся из ../sce_sys (имя Icon0.png там с заглавной буквы, PS4 ждёт icon0.png).
+sce_sys/icon0.png: ../sce_sys/Icon0.png
+	cp $< $@
+
+sce_sys/pic1.png: ../sce_sys/pic1.png
+	cp $< $@
+
+sce_sys/about/right.sprx:
+	cp $(TOOLCHAIN)/samples/piglet/sce_sys/about/right.sprx $@
+
+sce_sys/param.sfo: Makefile
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_new $@
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ APP_TYPE --type Integer --maxsize 4 --value 1
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ APP_VER --type Utf8 --maxsize 8 --value '01.00'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ ATTRIBUTE --type Integer --maxsize 4 --value 0
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ CATEGORY --type Utf8 --maxsize 4 --value 'gd'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ CONTENT_ID --type Utf8 --maxsize 48 --value '$(CONTENT_ID)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ SYSTEM_VER --type Integer --maxsize 4 --value 0
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ TITLE --type Utf8 --maxsize 128 --value '$(TITLE)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ TITLE_ID --type Utf8 --maxsize 12 --value '$(TITLE_ID)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '01.00'
+
+eboot.bin: $(OBJS)
+	$(LD) $(INTDIR)/*.o -o $(INTDIR)/ps4hddtools_app.elf $(LDFLAGS)
+	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(INTDIR)/ps4hddtools_app.elf -out=$(INTDIR)/ps4hddtools_app.oelf --eboot "eboot.bin" --paid 0x3800000000000010
+
+$(INTDIR)/%.o: $(PROJDIR)/%.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(INTDIR)/%.o: $(PROJDIR)/%.cpp
+	$(CCX) $(CXXFLAGS) -o $@ $<
+
+clean:
+	rm -rf $(CONTENT_ID).pkg pkg.gp4 eboot.bin build sce_sys assets/misc/ps4hddtools.elf

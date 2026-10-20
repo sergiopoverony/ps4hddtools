@@ -1,0 +1,22 @@
+{
+  "svc_check": "Looking for the service…",
+  "svc_starting": "Starting the service…",
+  "svc_waiting": "Waiting for the service to start…",
+  "svc_ready": "Service is running",
+  "svc_failed": "Could not start the service",
+  "svc_stopped": "Service is shut down",
+  "svc_hint_fail": "Make sure GoldHEN is running (BinLoader, port 9090). Cross - try again",
+  "svc_hint_stopped": "Cross - start the service again",
+  "no_disks": "No disks found",
+  "loading_disks": "Reading disks…",
+  "v0": "Healthy",
+  "v1": "Caution",
+  "v2": "Bad",
+  "vn": "No SMART",
+  "hint_refresh": "refresh disks",
+  "hint_quit": "shut down the service",
+  "quit_title": "Shut down the service?",
+  "quit_desc": "Any scan in progress will stop. The app starts the service again next time you open it.",
+  "yes": "shut down",
+  "cancel": "cancel"
+}
