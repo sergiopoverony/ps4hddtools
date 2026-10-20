@@ -13,7 +13,6 @@
 int main() {
     log_open(DATA_DIR);
     app_log("version %s", APP_VERSION);
-    notify("ps4hddtools %s: веб-интерфейс на порту %d", APP_VERSION, APP_PORT);
     engine_init();
     int port = APP_PORT;
 #ifdef HOST_TEST
