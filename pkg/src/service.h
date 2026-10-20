@@ -18,10 +18,6 @@ bool service_send_payload(std::string& err);
 
 // Доступен ли BinLoader GoldHEN (порт 9090).
 bool loader_reachable();
-// Значение [BinLoader] Enabled из /data/GoldHEN/config.ini: 1 включён, 0 выключен, -1 файла или ключа нет.
-int goldhen_binloader_state();
-// Меняет только эту одну цифру в файле, остальное не трогает. true, если записано.
-bool goldhen_set_binloader(bool on);
 
 // Просит службу выключиться (POST /quit).
 bool service_quit();

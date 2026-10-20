@@ -5,7 +5,7 @@
   "svc_ready": "Служба работает",
   "svc_failed": "Не удалось запустить службу",
   "svc_stopped": "Служба выключена",
-  "svc_hint_fail": "Проверьте, что GoldHEN запущен (BinLoader, порт 9090). Cross: повторить",
+  "svc_hint_fail": "Включите и нажмите Cross, чтобы повторить",
   "svc_hint_stopped": "Cross: запустить службу снова",
   "no_disks": "Диски не найдены",
   "loading_disks": "Читаю диски…",
@@ -19,9 +19,5 @@
   "quit_desc": "Идущая проверка остановится. При следующем запуске приложение само запустит службу снова.",
   "yes": "выключить",
   "cancel": "отмена",
-  "svc_loader": "Включаю BinLoader на время запуска…",
-  "err_cfg_write": "Не удалось включить BinLoader в настройках GoldHEN. Включите вручную: GoldHEN - Servers settings - Enable Payloader Server",
-  "err_loader_closed": "BinLoader включён, но порт 9090 закрыт. Перезапустите GoldHEN или переключите сервер в его настройках",
-  "err_loader_unknown": "BinLoader недоступен. Проверьте, что GoldHEN запущен, и включите GoldHEN - Servers settings - Enable Payloader Server",
-  "err_loader_noapply": "BinLoader включён в настройках, но не запустился. Включите его в меню GoldHEN: Servers settings - Enable Payloader Server"
+  "err_loader_off": "BinLoader выключен. Включите: GoldHEN - Servers settings - Enable Payloader Server"
 }
