@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "service.h"
+#include "diag.h"
 #include "scene.h"
 #include "image.h"
 #include "i18n.h"
@@ -326,6 +327,7 @@ static std::string g_pendingSig;
 static bool        g_confirmQuit = false;
 
 static std::string version_str() { return APP_VERSION; }
+static std::string g_diagLine;
 
 static void svc_send_now()
 {
@@ -505,6 +507,8 @@ static void draw_all()
         }
     }
 
+    if (!g_diagLine.empty()) draw_text(g_diagLine.substr(0, 130), MARGIN_X, 960, C_DIMMER, C_BG);
+
     // Подсказка внизу.
     std::string hint = "{cross} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
     put_center_rich(FRAME_WIDTH / 2, hint, 1010, C_DIM, C_BG);
@@ -574,6 +578,7 @@ bool ui_init()
     g_bannerOk = g_banner.load("/app0/assets/images/title.png");
     if (g_bannerOk) g_bannerW = BANNER_H * g_banner.width / g_banner.height;
 
+    g_diagLine = diag_run();   // временная диагностика прав приложения (чтение, ничего не пишет)
     bool padOk = pad_init();
     logf_("ui: ready, cell width %d, pad %s", g_cellW, padOk ? "ok" : "FAILED");
     g_ready = true;
