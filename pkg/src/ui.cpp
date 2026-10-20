@@ -331,13 +331,31 @@ static bool        g_confirmQuit = false;
 static std::string version_str() { return APP_VERSION; }
 static std::vector<std::string> g_diagLines;
 
+// Запуск службы. Один коннект на попытку (без отдельной "пробной" проверки порта перед отправкой -
+// два подключения к BinLoader подряд ловили гонку: первое (проверочное) успевало закрыться
+// как раз к моменту, когда начиналось второе, и то отваливалось с ECONNREFUSED).
+// Если BinLoader GoldHEN (порт 9090) выключен, приложение не может включить его само
+// (GoldHEN не перечитывает config.ini на лету). Вместо немедленной ошибки ждём и реально пробуем
+// отправить payload раз в секунду (пока пользователь сам включает порт в меню GoldHEN); как только
+// отправка пройдёт - продолжаем как обычно, без повторного нажатия Cross.
+static uint64_t g_waitLoaderUntil = 0;
+static uint64_t g_nextLoaderPoll = 0;
+
 static void svc_send_now()
 {
     std::string err;
-    if (service_send_payload(err)) {
+    bool connectFailed = false;
+    if (service_send_payload(err, &connectFailed)) {
         g_svc = S_WAITING;
         g_waitUntil = sceKernelGetProcessTime() + 25ULL * 1000000ULL;
         g_nextPoll = sceKernelGetProcessTime() + 1500000ULL;
+        g_svcErr.clear();
+    } else if (connectFailed) {
+        logf_("svc: BinLoader port 9090 is closed, waiting for it to open");
+        uint64_t now = sceKernelGetProcessTime();
+        g_svc = S_WAIT_LOADER;
+        g_waitLoaderUntil = now + 120ULL * 1000000ULL;  // 2 минуты - успеть зайти в меню GoldHEN и включить
+        g_nextLoaderPoll = now + 1000000ULL;
         g_svcErr.clear();
     } else {
         g_svc = S_FAILED;
@@ -346,27 +364,7 @@ static void svc_send_now()
     g_redraw = 2;
 }
 
-// Запуск службы. Если BinLoader GoldHEN (порт 9090) выключен, приложение не может его включить сама
-// (GoldHEN не перечитывает config.ini на лету). Вместо немедленной ошибки ждём и опрашиваем порт
-// (пока пользователь сам включает его в меню GoldHEN); как только порт откроется - сами отправляем
-// payload без повторного нажатия Cross. Если за отведённое время порт не открылся - обычная ошибка.
-static uint64_t g_waitLoaderUntil = 0;
-static uint64_t g_nextLoaderPoll = 0;
-
-static void svc_start_payload()
-{
-    if (!loader_reachable()) {
-        logf_("svc: BinLoader port 9090 is closed, waiting for it to open");
-        uint64_t now = sceKernelGetProcessTime();
-        g_svc = S_WAIT_LOADER;
-        g_waitLoaderUntil = now + 120ULL * 1000000ULL;  // 2 минуты - успеть зайти в меню GoldHEN и включить
-        g_nextLoaderPoll = now;
-        g_svcErr.clear();
-        g_redraw = 2;
-        return;
-    }
-    svc_send_now();
-}
+static void svc_start_payload() { svc_send_now(); }
 
 static void svc_step(uint64_t now)
 {
@@ -387,21 +385,29 @@ static void svc_step(uint64_t now)
         }
         g_redraw = 2;
     } else if (g_svc == S_WAIT_LOADER) {
-        // Сами проверяем порт 9090 раз в секунду, пока пользователь включает BinLoader в меню GoldHEN.
-        // Как только порт открылся - сразу отправляем payload, без повторного нажатия Cross.
+        // Сами пробуем отправить payload раз в секунду, пока пользователь включает BinLoader в меню
+        // GoldHEN. Это настоящая попытка отправки (а не отдельная "проверка порта"), чтобы не ловить
+        // гонку из двух подряд подключений. Таймер ожидания (g_waitLoaderUntil) трогаем только при
+        // первом входе в это состояние, не на каждой попытке.
         if (now < g_nextLoaderPoll) return;
         g_nextLoaderPoll = now + 1000000ULL;
-        if (loader_reachable()) {
-            logf_("svc: BinLoader port opened, sending payload now");
-            svc_send_now();
-        } else {
-            g_redraw = 2; // обновляем обратный отсчёт на экране
-            if (now > g_waitLoaderUntil) {
-                logf_("svc: gave up waiting for BinLoader");
-                g_svc = S_FAILED;
-                g_svcErr = tr("err_loader_off", "BinLoader is off. Enable it: GoldHEN - Servers settings - Enable Payloader Server");
-            }
+        std::string err; bool connectFailed = false;
+        if (service_send_payload(err, &connectFailed)) {
+            logf_("svc: BinLoader port opened, payload sent");
+            g_svc = S_WAITING;
+            g_waitUntil = now + 25ULL * 1000000ULL;
+            g_nextPoll = now + 1500000ULL;
+            g_svcErr.clear();
+        } else if (!connectFailed) {
+            // Порт открылся, но отправка не удалась по другой причине - это настоящая ошибка.
+            g_svc = S_FAILED;
+            g_svcErr = err;
+        } else if (now > g_waitLoaderUntil) {
+            logf_("svc: gave up waiting for BinLoader");
+            g_svc = S_FAILED;
+            g_svcErr = tr("err_loader_off", "BinLoader is off. Enable it: GoldHEN - Servers settings - Enable Payloader Server");
         }
+        g_redraw = 2; // обновляем обратный отсчёт на экране
     } else if (g_svc == S_WAITING) {
         if (now < g_nextPoll) return;
         g_nextPoll = now + 1000000ULL;

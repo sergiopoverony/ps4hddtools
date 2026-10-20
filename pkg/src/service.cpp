@@ -24,8 +24,13 @@ bool service_query(std::string& version, bool& busy)
     return !version.empty();
 }
 
-bool service_send_payload(std::string& err)
+// connectFailed (если указан) ставится в true только тогда, когда не удалось именно подключиться
+// к порту 9090 (BinLoader выключен/недоступен) - в отличие от ошибок чтения файла или отправки,
+// на которые повторная попытка подключиться не поможет.
+bool service_send_payload(std::string& err, bool* connectFailed)
 {
+    if (connectFailed) *connectFailed = false;
+
     FILE* f = fopen(PAYLOAD_PATH, "rb");
     if (!f) { err = "no payload file in PKG"; logf_("service: cannot open %s", PAYLOAD_PATH); return false; }
     std::string data;
@@ -36,7 +41,12 @@ bool service_send_payload(std::string& err)
     if (data.size() < 1024) { err = "payload file is empty"; return false; }
 
     int s = net_connect(SERVICE_HOST, LOADER_PORT, 3000);
-    if (s < 0) { err = "BinLoader (port 9090) is not available. Is GoldHEN running?"; logf_("service: BinLoader connect failed"); return false; }
+    if (s < 0) {
+        err = "BinLoader (port 9090) is not available. Is GoldHEN running?";
+        logf_("service: BinLoader connect failed");
+        if (connectFailed) *connectFailed = true;
+        return false;
+    }
 
     size_t sent = 0;
     while (sent < data.size()) {
@@ -46,14 +56,6 @@ bool service_send_payload(std::string& err)
     }
     close(s);
     logf_("service: payload sent (%d bytes)", (int)sent);
-    return true;
-}
-
-bool loader_reachable()
-{
-    int s = net_connect(SERVICE_HOST, LOADER_PORT, 700);
-    if (s < 0) return false;
-    close(s);
     return true;
 }
 

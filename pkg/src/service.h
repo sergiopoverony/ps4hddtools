@@ -14,10 +14,8 @@ bool service_query(std::string& version, bool& busy);
 
 // Отправляет ELF из PKG (/app0/assets/misc/ps4hddtools.elf) в BinLoader (127.0.0.1:9090).
 // Если старая копия ещё работает, новая сама попросит её завершиться.
-bool service_send_payload(std::string& err);
-
-// Доступен ли BinLoader GoldHEN (порт 9090).
-bool loader_reachable();
+// connectFailed (необязателен): true, если не удалось именно подключиться к порту (BinLoader выключен).
+bool service_send_payload(std::string& err, bool* connectFailed = nullptr);
 
 // Просит службу выключиться (POST /quit).
 bool service_quit();
