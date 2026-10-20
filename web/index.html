@@ -100,6 +100,7 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
   <div class="hbar">
     <button class="ghost" id="btnRefresh" data-i="refresh"></button>
     <select id="lang"><option value="ru">Русский</option><option value="en">English</option></select>
+    <button class="ghost" id="btnDonate" data-i="donate"></button>
     <button class="ghost danger" id="btnQuit" data-i="quit"></button>
   </div>
 </header>
@@ -140,7 +141,7 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 const VERSION='__VERSION__';
 const T={
 ru:{refresh:'Обновить диски',quit:'Выключить',scanTitle:'Проверка поверхности',from:'С (ГБ)',to:'По (ГБ)',whole:'Весь диск',
-support:'Поддержать СБП',start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
+support:'Поддержать СБП',donate:'Поддержать',start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
 loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',noSmartHint:'Этот диск не отдаёт SMART (часто так у USB-корпусов). Проверка поверхности доступна.',
 v0:'Здоров',v1:'Внимание',v2:'Плохо',vn:'Нет данных',health:'Состояние',temp:'Температура',
 fw:'Прошивка',serial:'Серийный номер',iface:'Интерфейс',rot:'Скорость вращения',ssd:'SSD',rpm:'об/мин',
@@ -167,7 +168,7 @@ busy:'Сейчас выполняется другая операция.',bad_ra
 h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
 an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
 en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
-support:'Donate PayPal',start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
+support:'Donate PayPal',donate:'Donate',start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
 loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',noSmartHint:'This disk does not provide SMART (common with USB enclosures). Surface scan is available.',
 v0:'Healthy',v1:'Caution',v2:'Bad',vn:'No data',health:'Health',temp:'Temperature',
 fw:'Firmware',serial:'Serial number',iface:'Interface',rot:'Rotation rate',ssd:'SSD',rpm:'rpm',
@@ -212,12 +213,15 @@ async function api(path,body){
   return j;
 }
 
-// Окно «Поддержать»: через 15 с после открытия страницы (русский: СБП, иначе PayPal); закрытие запоминается на время сессии браузера.
-let supportReady=false,supportClosed=false;
-try{supportClosed=sessionStorage.getItem('supportClosed')==='1'}catch(e){}
-function updateSupport(){$('supportImg').src=lang==='ru'?'/qr.png':'/qr_paypal.png';$('supportImg').alt=lang==='ru'?'QR СБП':'QR PayPal';$('support').classList.toggle('on',supportReady&&!supportClosed)}
-setTimeout(()=>{supportReady=true;updateSupport()},15000);
-$('supportX').onclick=()=>{supportClosed=true;try{sessionStorage.setItem('supportClosed','1')}catch(e){}updateSupport()};
+// Окно «Поддержать»: само появляется один раз, через 15 с после первого открытия страницы.
+// После закрытия (крестик) больше само не появляется, пока не нажмут кнопку «Поддержать».
+// Русский: СБП, иначе PayPal. Закрытие запоминается в браузере.
+let supportOpen=false,supportClosedBefore=false;
+try{supportClosedBefore=localStorage.getItem('supportClosed')==='1'}catch(e){}
+function updateSupport(){$('supportImg').src=lang==='ru'?'/qr.png':'/qr_paypal.png';$('supportImg').alt=lang==='ru'?'QR СБП':'QR PayPal';$('support').classList.toggle('on',supportOpen)}
+setTimeout(()=>{if(!supportClosedBefore){supportOpen=true;updateSupport()}},15000);
+$('supportX').onclick=()=>{supportOpen=false;supportClosedBefore=true;try{localStorage.setItem('supportClosed','1')}catch(e){}updateSupport()};
+$('btnDonate').onclick=()=>{supportOpen=true;updateSupport()};
 function applyLang(){
   document.documentElement.lang=lang;
   document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
