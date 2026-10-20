@@ -92,12 +92,25 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 .support .x{position:absolute;top:6px;right:8px;width:26px;height:26px;border-radius:50%;border:0;background:var(--panel2);color:var(--text);font-size:16px;line-height:1;cursor:pointer}
 .support .x:hover{background:#333944}
 @keyframes pop{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.menu{display:none}
+@media(max-width:700px){
+header{flex-direction:column;align-items:stretch}
+.logo{margin:8px 14px 4px;align-self:flex-start;height:48px}
+.tabs{flex-direction:column;align-items:stretch;overflow:visible;padding:4px 14px;flex:none}
+.tab{width:100%;min-width:0}
+.tab b,.tab small,.tab .st{white-space:normal}
+.menu{display:block;margin:4px 14px 10px;text-align:center}
+.hbar{display:none;flex-direction:column;align-items:stretch;padding:0 14px 12px}
+header.open .hbar{display:flex}
+.hbar>*{width:100%;text-align:center}
+}
 </style></head>
 <body>
 <header>
   <img class="logo" src="/logo.png" alt="PS4 HDD Tools">
   <div class="tabs" id="tabs"></div>
-  <div class="hbar">
+  <button class="ghost menu" id="btnMenu" data-i="menu" aria-expanded="false"></button>
+  <div class="hbar" id="hbar">
     <button class="ghost" id="btnRefresh" data-i="refresh"></button>
     <select id="lang"><option value="ru">Русский</option><option value="en">English</option></select>
     <button class="ghost" id="btnDonate" data-i="donate"></button>
@@ -141,7 +154,7 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 const VERSION='__VERSION__';
 const T={
 ru:{refresh:'Обновить диски',quit:'Выключить',scanTitle:'Проверка поверхности',from:'С (ГБ)',to:'По (ГБ)',whole:'Весь диск',
-support:'Поддержать СБП',donate:'Поддержать',start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
+menu:'☰ Меню',support:'Поддержать СБП',donate:'Поддержать',start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
 loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',noSmartHint:'Этот диск не отдаёт SMART (часто так у USB-корпусов). Проверка поверхности доступна.',
 v0:'Здоров',v1:'Внимание',v2:'Плохо',vn:'Нет данных',health:'Состояние',temp:'Температура',
 fw:'Прошивка',serial:'Серийный номер',iface:'Интерфейс',rot:'Скорость вращения',ssd:'SSD',rpm:'об/мин',
@@ -168,7 +181,7 @@ busy:'Сейчас выполняется другая операция.',bad_ra
 h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
 an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
 en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
-support:'Donate PayPal',donate:'Donate',start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
+menu:'☰ Menu',support:'Donate PayPal',donate:'Donate',start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
 loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',noSmartHint:'This disk does not provide SMART (common with USB enclosures). Surface scan is available.',
 v0:'Healthy',v1:'Caution',v2:'Bad',vn:'No data',health:'Health',temp:'Temperature',
 fw:'Firmware',serial:'Serial number',iface:'Interface',rot:'Rotation rate',ssd:'SSD',rpm:'rpm',
@@ -403,6 +416,8 @@ $('btnFull').onclick=setDefaultRange;
 $('btnPause').onclick=async()=>{try{await api(st&&st.scan&&st.scan.state==='paused'?'/api/scan/resume':'/api/scan/pause',{});pollOnce()}catch(e){$('msg').textContent=e.message}};
 $('btnStop').onclick=async()=>{if(!await askModal(t('stopQ'),[],t('sYes'),t('cNo')))return;try{await api('/api/scan/stop',{});startPolling()}catch(e){$('msg').textContent=e.message}};
 $('btnRefresh').onclick=doRefresh;
+$('btnMenu').onclick=()=>{const o=document.querySelector('header').classList.toggle('open');$('btnMenu').setAttribute('aria-expanded',o)};
+$('hbar').addEventListener('click',e=>{if(e.target.tagName==='BUTTON'){document.querySelector('header').classList.remove('open');$('btnMenu').setAttribute('aria-expanded','false')}});
 $('btnLog').onclick=loadLog;
 $('btnQuit').onclick=async()=>{if(!await askModal(t('quitQ'),[],t('qYes'),t('cNo')))return;try{await api('/quit',{})}catch(e){}if(timer)clearInterval(timer);document.body.textContent=t('bye');document.body.style.padding='24px'};
 $('lang').onchange=e=>{lang=e.target.value;try{localStorage.setItem('lang',lang)}catch(x){}applyLang()};
