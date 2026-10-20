@@ -30,7 +30,7 @@ extern "C" int sceSystemServiceHideSplashScreen(void);
 #define FRAME_HEIGHT  1080
 #define FRAME_DEPTH      4
 
-static const int FONT_PX   = 26;
+static const int FONT_PX   = 20;   // было 26 - уменьшили по просьбе пользователя, проверить на экране
 static const int MARGIN_X  = 40;
 static const int BANNER_LEFT = 12;
 static const int BANNER_TOP = 16;
@@ -140,7 +140,7 @@ static void draw_text(const std::string& s, int x, int baseline, Color fg, Color
 // Токены в тексте: {cross} {circle} {square} {triangle} {options} {updown}.
 
 enum Icon { ICON_CROSS, ICON_CIRCLE, ICON_SQUARE, ICON_TRIANGLE, ICON_OPTIONS, ICON_UPDOWN };
-static const int ICON_S = 26;   // сторона иконки в пикселях
+static const int ICON_S = 20;   // сторона иконки в пикселях - масштабируем вместе с FONT_PX
 
 static bool in_tri(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
 {
@@ -263,7 +263,7 @@ static void put_center_rich(int cx, const std::string& s, int baseline, Color fg
     std::vector<RichTok> toks = rich_parse(s);
     int x = cx - rich_width(toks) / 2;
     for (size_t i = 0; i < toks.size(); i++) {
-        if (toks[i].isIcon) { draw_icon(toks[i].icon, x, baseline - 22, bg); x += ICON_S; }
+        if (toks[i].isIcon) { draw_icon(toks[i].icon, x, baseline - 17, bg); x += ICON_S; }
         else { draw_text(toks[i].text, x, baseline, fg, bg); x += count_cp(toks[i].text) * g_cellW; }
     }
 }
