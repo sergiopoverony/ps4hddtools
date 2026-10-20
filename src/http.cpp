@@ -196,7 +196,8 @@ int http_run(int port) {
     int srv = make_listener(port, in_use);
     if (srv < 0 && in_use) {
         // Уже работает другая копия: просим её завершиться (файл-флаг) и ждём освобождения порта.
-        app_log("порт %d занят: прошу старую копию завершиться", port);
+        app_log("порт %d занят: найдена старая копия, жду 3 с и прошу её завершиться", port);
+        std::this_thread::sleep_for(std::chrono::seconds(3));  // на случай, если консоль притормаживает
         FILE* f = fopen(quit_flag_path().c_str(), "w");
         if (f) { fputs("quit\n", f); fclose(f); }
         for (int i = 0; i < 180 && srv < 0; ++i) {  // до ~90 с
@@ -204,6 +205,7 @@ int http_run(int port) {
             srv = make_listener(port, in_use);
         }
         unlink(quit_flag_path().c_str());
+        if (srv >= 0) notify("ps4hddtools перезапущен (старая копия закрыта)");
     }
     if (srv < 0) {
         app_log("не удалось занять порт %d (errno=%d %s)", port, errno, strerror(errno));
