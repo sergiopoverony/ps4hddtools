@@ -278,7 +278,7 @@ function renderTabs(){
     s.appendChild(el('span','',label));b.appendChild(s);
     b.appendChild(el('small','',(d.label?d.label+' · ':'')+d.id+' · '+fmtBytes(d.bytes)));
     b.title=(d.smart&&d.smart.model?d.smart.model:shortModel(d))+' · '+(d.label?d.label+' · ':'')+d.id+' · '+fmtBytes(d.bytes);
-    b.onclick=()=>{sel=d.id;renderTabs();renderLeft();if(!(st&&st.job!=='idle'))setDefaultRange();renderRight()};
+    b.onclick=()=>{sel=d.id;renderTabs();renderLeft();setDefaultRange();renderRight()};
     box.appendChild(b);
   });
 }

@@ -15,7 +15,7 @@ TARGET   := build/ps4hddtools.elf
 SOURCES  := $(wildcard src/*.cpp)
 HEADERS  := $(wildcard src/*.h)
 ASSETS   := build/assets_gen.h
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pthread -lSceSystemService
+CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pthread -lSceSystemService -lSceNetCtl
 
 all: $(TARGET)
 
