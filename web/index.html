@@ -35,6 +35,8 @@ header.open .hbar{display:flex}
 button.ghost,select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:inherit;cursor:pointer}
 button.ghost:hover{background:#2c313a}
 button.danger{background:#7d252b;border-color:#a3323a}
+button.green{background:#1f7a47;border-color:#2d9d5f;color:#fff}
+button.green:hover{background:#27905a}
 main{flex:1;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:12px;padding:12px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
 h2{margin:0 0 10px;font-size:17px;font-weight:600}
@@ -126,7 +128,7 @@ header{flex-direction:column;align-items:stretch}
   <div class="hbar" id="hbar">
     <button class="ghost" id="btnRefresh" data-i="refresh"></button>
     <select id="lang"><option value="ru">Русский</option><option value="en">English</option></select>
-    <button class="ghost" id="btnDonate" data-i="donate"></button>
+    <button class="ghost green" id="btnDonate" data-i="donate"></button>
     <button class="ghost danger" id="btnQuit" data-i="quit"></button>
   </div>
 </header>
