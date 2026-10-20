@@ -9,11 +9,15 @@
 #include <math.h>
 #include <string.h>
 #include <unistd.h>
+#include <wchar.h>
 #include <string>
 #include <vector>
 
 #include <orbis/Pad.h>
 #include <orbis/UserService.h>
+#include <orbis/ImeDialog.h>
+#include <orbis/CommonDialog.h>
+#include <orbis/Sysmodule.h>
 
 extern "C" uint64_t sceKernelGetProcessTime(void);
 extern "C" int sceSystemServiceHideSplashScreen(void);
@@ -260,18 +264,18 @@ static void put_center_rich(int cx, const std::string& s, int baseline, Color fg
     }
 }
 
-static int col_x(int col) { return MARGIN_X + col * g_cellW; }
+static int col_x(int x0, int col) { return x0 + col * g_cellW; }
 
-static void put_left(int col, const std::string& s, int baseline, Color fg, Color bg)
+static void put_left(int x0, int col, const std::string& s, int baseline, Color fg, Color bg)
 {
-    draw_text(s, col_x(col), baseline, fg, bg);
+    draw_text(s, col_x(x0, col), baseline, fg, bg);
 }
 
-static void put_right(int col, int width, const std::string& s, int baseline, Color fg, Color bg)
+static void put_right(int x0, int col, int width, const std::string& s, int baseline, Color fg, Color bg)
 {
     std::string t = fit(s, width);
     int n = count_cp(t);
-    draw_text(t, col_x(col + width - n), baseline, fg, bg);
+    draw_text(t, col_x(x0, col + width - n), baseline, fg, bg);
 }
 
 static void put_center(int cx, const std::string& s, int baseline, Color fg, Color bg)
@@ -328,11 +332,21 @@ static std::string g_pendingSig;
 static std::string version_str() { return APP_VERSION; }
 static std::vector<std::string> g_diagLines;
 
-// ---------------------------------------------------------------- экраны: список дисков / SMART / сканирование
+// ---------------------------------------------------------------- навигация: вкладки дисков / смарт+скан / меню
+//
+// Один экран: сверху горизонтальная строка вкладок (диски + вкладка меню, листаются Left/Right),
+// под ней при выбранном (X) диске сразу обе панели - SMART слева и проверка поверхности справа
+// (как на веб-странице), а не отдельные экраны. Вниз из строки вкладок - фокус сразу на кнопке
+// старта/паузы проверки. На уровне действий Left/Right ходит по кнопкам/полям, Up/Down - назад
+// на вкладки. Options (или вкладка меню) открывает вертикальное меню (обновить диски / выключить
+// службу): Up/Down - выбор, X - активировать, Circle - закрыть.
 
-enum Screen { SCR_LIST, SCR_DISK, SCR_SCAN };
-static Screen g_screen = SCR_LIST;
-static std::string g_selId;       // id выбранного диска (не индекс - список может пересортироваться)
+enum Focus { FOCUS_TABS, FOCUS_ACTIONS, FOCUS_MENU };
+static Focus       g_focus = FOCUS_TABS;
+static int         g_tabCursor = 0;   // индекс вкладки: 0..disks.size()-1 - диск, disks.size() - вкладка меню
+static std::string g_selId;           // id диска, подтверждённого Cross (его показываем в панелях)
+static int         g_actionCursor = 0;
+static int         g_menuCursor = 0;
 
 enum Confirm { CONF_NONE, CONF_QUIT, CONF_SCAN_START, CONF_SCAN_STOP };
 static Confirm g_confirm = CONF_NONE;
@@ -342,6 +356,20 @@ static uint64_t    g_nextState = 0;
 static bool        g_scanBusy = false;   // идёт замер скорости (между estimate и подтверждением)
 static std::string g_scanMsg;            // временное сообщение экрана сканирования (замер, ошибка)
 static EstView      g_confirmEst;        // результат замера, показанный в окне подтверждения старта
+static uint64_t     g_rangeFromGb = 0, g_rangeToGb = 0;   // диапазон проверки (0,0 = весь диск)
+static uint64_t     g_confirmFromGb = 0, g_confirmToGb = 0; // диапазон, с которым был сделан замер
+
+// Пункты строки действий справа (проверка поверхности): во время работы проверки диапазон
+// не редактируется - только пауза/продолжить и стоп.
+enum ActKind { AK_FROM, AK_TO, AK_WHOLE, AK_STARTPAUSE, AK_STOP };
+
+static std::vector<ActKind> action_items(bool mineRunning)
+{
+    std::vector<ActKind> v;
+    if (mineRunning) { v.push_back(AK_STARTPAUSE); v.push_back(AK_STOP); }
+    else { v.push_back(AK_FROM); v.push_back(AK_TO); v.push_back(AK_WHOLE); v.push_back(AK_STARTPAUSE); }
+    return v;
+}
 
 static int sel_idx()
 {
@@ -541,43 +569,51 @@ static void draw_wrapped(const std::string& s, int x, int yTop, int maxc, int ma
     }
 }
 
-// ---------------------------------------------------------------- экран: список дисков
+// ---------------------------------------------------------------- строка вкладок дисков + меню
 
-static void draw_screen_list(int y0)
+static void draw_tab_bar(int y0)
 {
-    if (!g_disksOk) { draw_text(tr("loading_disks", "Reading disks…"), MARGIN_X, y0 + 30, C_DIM, C_BG); return; }
-    if (g_disks.disks.empty()) { draw_text(tr("no_disks", "No disks found"), MARGIN_X, y0 + 30, C_DIM, C_BG); return; }
+    int n = (int)g_disks.disks.size();
+    const int menuW = 220, gap = 8;
+    int tabsW = FRAME_WIDTH - 2 * MARGIN_X - menuW - gap;
+    int tabW = n > 0 ? tabsW / n : tabsW;
+    int x = MARGIN_X;
 
-    for (size_t i = 0; i < g_disks.disks.size(); i++) {
+    for (int i = 0; i < n; i++) {
         const DiskView& d = g_disks.disks[i];
-        int y = y0 + (int)i * ROW_H;
-        if (y + ROW_H > 960) break;
-        bool isSel = (d.id == g_selId);
-        Color bg = (i & 1) ? C_ROW2 : C_PANEL;
-        if (isSel) {
-            fill(MARGIN_X - 10, y, FRAME_WIDTH - 2 * (MARGIN_X - 10), ROW_H - 6, C_EDGE);
-            fill(MARGIN_X - 7, y + 3, FRAME_WIDTH - 2 * (MARGIN_X - 10) - 6, ROW_H - 12, bg);
+        bool cursorHere = (g_focus == FOCUS_TABS && g_tabCursor == i);
+        bool activeHere = (d.id == g_selId);
+        Color bg = activeHere ? C_PANEL : C_ROW2;
+        if (cursorHere) {
+            fill(x, y0, tabW - gap, ROW_H - 6, C_EDGE);
+            fill(x + 3, y0 + 3, tabW - gap - 6, ROW_H - 12, bg);
         } else {
-            fill(MARGIN_X - 10, y, FRAME_WIDTH - 2 * (MARGIN_X - 10), ROW_H - 6, bg);
+            fill(x, y0, tabW - gap, ROW_H - 6, bg);
         }
-        int base = y + 38;
-        draw_text(short_model(d), MARGIN_X, base, C_TEXT, bg);
-        std::string sub = (d.label.empty() ? "" : d.label + " · ") + d.id + " · " + fmt_size(d.bytes);
-        draw_text(sub, MARGIN_X + 520, base, C_DIM, bg);
+        std::string label = fit(short_model(d) + " " + d.id, (tabW - 50) / g_cellW);
+        draw_text(label, x + 14, y0 + 40, activeHere ? C_TEXT : C_DIM, bg);
 
-        std::string vt; Color vc = C_DIM;
-        if (g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d.id) {
-            uint64_t tot = g_state.scan.to - g_state.scan.from;
-            double pct = tot > 0 ? 100.0 * (double)g_state.scan.done / (double)tot : 0;
-            char b[32]; snprintf(b, sizeof(b), "%s %.0f%%", g_state.scan.state == "paused" ? "||" : ">", pct);
-            vt = b; vc = C_AMBER;
-        } else if (!d.hasSmart || d.verdict < 0) vt = tr("vn", "No SMART");
-        else if (d.verdict == 0) { vt = tr("v0", "Healthy"); vc = C_GREEN; }
-        else if (d.verdict == 1) { vt = tr("v1", "Caution"); vc = C_AMBER; }
-        else { vt = tr("v2", "Bad"); vc = C_RED; }
-        if (d.hasSmart && d.temp > 0) { char t[16]; snprintf(t, sizeof(t), "  %d°C", d.temp); vt += t; }
-        draw_text(vt, MARGIN_X + 1100, base, vc, bg);
+        Color dot = C_DIM;
+        if (d.hasSmart && d.verdict == 0) dot = C_GREEN;
+        else if (d.hasSmart && d.verdict == 1) dot = C_AMBER;
+        else if (d.hasSmart && d.verdict == 2) dot = C_RED;
+        if (g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d.id) dot = C_AMBER;
+        fill(x + tabW - gap - 24, y0 + 25, 14, 14, dot);
+
+        x += tabW;
     }
+
+    bool menuCursorHere = (g_focus == FOCUS_TABS && g_tabCursor == n) || g_focus == FOCUS_MENU;
+    Color mbg = menuCursorHere ? C_PANEL : C_ROW2;
+    int mx = MARGIN_X + tabsW + gap;
+    if (menuCursorHere) {
+        fill(mx, y0, menuW, ROW_H - 6, C_EDGE);
+        fill(mx + 3, y0 + 3, menuW - 6, ROW_H - 12, mbg);
+    } else {
+        fill(mx, y0, menuW, ROW_H - 6, mbg);
+    }
+    std::string mlabel = "{options} " + tr("menu_title", "Menu");
+    put_center_rich(mx + menuW / 2, mlabel, y0 + 40, C_TEXT, mbg);
 }
 
 // ---------------------------------------------------------------- экран: SMART диска
@@ -593,136 +629,170 @@ static std::string reason_text(const DiskView& d, const SmartReasonView& r)
     return name + ": " + v;
 }
 
-static void draw_screen_disk(const DiskView& d, int y0)
+// x0/w - левая панель (SMART), уже не вся ширина экрана, как раньше, а ~44% (справа - проверка поверхности).
+static void draw_screen_disk(const DiskView& d, int x0, int w, int y0)
 {
-    std::string header = (!d.model.empty() ? d.model : !d.bridge.empty() ? d.bridge : d.id) + "   ·   " + fmt_size(d.bytes);
-    draw_text(header, MARGIN_X, y0 + 34, C_TEXT, C_BG);
+    int charsAvail = w / g_cellW;
+    std::string header = (!d.model.empty() ? d.model : !d.bridge.empty() ? d.bridge : d.id) + " · " + fmt_size(d.bytes);
+    draw_text(fit(header, charsAvail), x0, y0 + 30, C_TEXT, C_BG);
 
     if (!d.hasSmart) {
         draw_wrapped(tr("noSmartHint", "This disk does not provide SMART (common with USB enclosures). Surface scan is available."),
-                     MARGIN_X, y0 + 90, 110, 2, C_DIM, C_BG);
-        draw_text(tr("path", "Device") + ": " + d.path, MARGIN_X, y0 + 170, C_DIM, C_BG);
+                     x0, y0 + 80, charsAvail - 2, 3, C_DIM, C_BG);
+        draw_text(fit(tr("path", "Device") + ": " + d.path, charsAvail), x0, y0 + 190, C_DIM, C_BG);
         return;
     }
 
-    int y1 = y0 + 90;
+    int y1 = y0 + 76;
     std::string vt; Color vc = C_DIM;
     if (d.verdict == 0) { vt = tr("v0", "Healthy"); vc = C_GREEN; }
     else if (d.verdict == 1) { vt = tr("v1", "Caution"); vc = C_AMBER; }
     else if (d.verdict == 2) { vt = tr("v2", "Bad"); vc = C_RED; }
     else vt = tr("vn", "No SMART");
-    draw_text(vt, MARGIN_X, y1, vc, C_BG);
-    if (d.temp > 0) { char t[32]; snprintf(t, sizeof(t), "%d °C", d.temp); draw_text(t, MARGIN_X + 280, y1, C_DIM, C_BG); }
+    draw_text(vt, x0, y1, vc, C_BG);
+    if (d.temp > 0) { char t[32]; snprintf(t, sizeof(t), "%d °C", d.temp); draw_text(t, x0 + 220, y1, C_DIM, C_BG); }
 
     struct KV { std::string k, v; };
-    std::vector<KV> left, right;
-    left.push_back(KV{ tr("fw", "Firmware"), d.firmware.empty() ? "—" : d.firmware });
-    left.push_back(KV{ tr("serial", "Serial number"), d.serial.empty() ? "—" : d.serial });
-    left.push_back(KV{ tr("iface", "Interface"), d.proto + (d.bridge.empty() ? "" : (" · " + d.bridge)) });
-    left.push_back(KV{ tr("rot", "Rotation rate"), d.rpm == 1 ? tr("ssd", "SSD") : d.rpm > 1 ? (fmt_num((uint64_t)d.rpm) + " " + tr("rpm", "rpm")) : "—" });
-    right.push_back(KV{ tr("hr", "Total host reads"), d.hostRead >= 0 ? fmt_size((uint64_t)d.hostRead) : "—" });
-    right.push_back(KV{ tr("hw", "Total host writes"), d.hostWrite >= 0 ? fmt_size((uint64_t)d.hostWrite) : "—" });
-    right.push_back(KV{ tr("cycles", "Power cycles"), d.cycles >= 0 ? fmt_num((uint64_t)d.cycles) : "—" });
-    right.push_back(KV{ tr("poh", "Power-on hours"), d.poh >= 0 ? fmt_num((uint64_t)d.poh) : "—" });
+    std::vector<KV> kv;
+    kv.push_back(KV{ tr("fw", "Firmware"), d.firmware.empty() ? "—" : d.firmware });
+    kv.push_back(KV{ tr("serial", "Serial number"), d.serial.empty() ? "—" : d.serial });
+    kv.push_back(KV{ tr("iface", "Interface"), d.proto + (d.bridge.empty() ? "" : (" · " + d.bridge)) });
+    kv.push_back(KV{ tr("rot", "Rotation rate"), d.rpm == 1 ? tr("ssd", "SSD") : d.rpm > 1 ? (fmt_num((uint64_t)d.rpm) + " " + tr("rpm", "rpm")) : "—" });
+    kv.push_back(KV{ tr("hr", "Total host reads"), d.hostRead >= 0 ? fmt_size((uint64_t)d.hostRead) : "—" });
+    kv.push_back(KV{ tr("hw", "Total host writes"), d.hostWrite >= 0 ? fmt_size((uint64_t)d.hostWrite) : "—" });
+    kv.push_back(KV{ tr("cycles", "Power cycles"), d.cycles >= 0 ? fmt_num((uint64_t)d.cycles) : "—" });
+    kv.push_back(KV{ tr("poh", "Power-on hours"), d.poh >= 0 ? fmt_num((uint64_t)d.poh) : "—" });
 
-    int gy = y1 + 50;
-    for (size_t i = 0; i < left.size(); i++) {
-        draw_text(left[i].k + ":", MARGIN_X, gy + (int)i * 38, C_DIM, C_BG);
-        draw_text(left[i].v, MARGIN_X + 340, gy + (int)i * 38, C_TEXT, C_BG);
-    }
-    for (size_t i = 0; i < right.size(); i++) {
-        draw_text(right[i].k + ":", MARGIN_X + 900, gy + (int)i * 38, C_DIM, C_BG);
-        draw_text(right[i].v, MARGIN_X + 1260, gy + (int)i * 38, C_TEXT, C_BG);
+    int gy = y1 + 42;
+    int valX = x0 + 260;
+    int valChars = (w - 260) / g_cellW; if (valChars < 4) valChars = 4;
+    for (size_t i = 0; i < kv.size(); i++) {
+        draw_text(fit(kv[i].k + ":", 30), x0, gy + (int)i * 34, C_DIM, C_BG);
+        draw_text(fit(kv[i].v, valChars), valX, gy + (int)i * 34, C_TEXT, C_BG);
     }
 
-    int y2 = gy + 4 * 38 + 24;
+    int y2 = gy + (int)kv.size() * 34 + 18;
     if (d.reasons.empty() && d.verdict == 0) {
-        draw_text(tr("ok", "No critical indicators found."), MARGIN_X, y2, C_GREEN, C_BG);
-        y2 += 36;
+        draw_text(tr("ok", "No critical indicators found."), x0, y2, C_GREEN, C_BG);
+        y2 += 32;
     } else {
         size_t shown = 0;
         for (size_t i = 0; i < d.reasons.size() && shown < 3; i++, shown++) {
             Color rc = d.reasons[i].sev == 2 ? C_RED : C_AMBER;
-            draw_text(fit(reason_text(d, d.reasons[i]), 150), MARGIN_X, y2, rc, C_BG);
-            y2 += 32;
+            draw_wrapped(reason_text(d, d.reasons[i]), x0, y2, charsAvail - 2, 2, rc, C_BG);
+            y2 += 62;
         }
     }
 
-    y2 += 16;
-    draw_text(tr("attrs", "SMART attributes"), MARGIN_X, y2, C_TEXT, C_BG);
-    y2 += 34;
-    put_left(0, tr("id", "ID"), y2, C_DIM, C_BG);
-    put_left(6, tr("name", "Name"), y2, C_DIM, C_BG);
-    put_right(60, 7, tr("cur", "Current"), y2, C_DIM, C_BG);
-    put_right(68, 7, tr("worst", "Worst"), y2, C_DIM, C_BG);
-    put_right(76, 7, tr("thr", "Thresh"), y2, C_DIM, C_BG);
-    put_right(96, 14, tr("raw", "Raw"), y2, C_DIM, C_BG);
+    y2 += 10;
+    draw_text(tr("attrs", "SMART attributes"), x0, y2, C_TEXT, C_BG);
     y2 += 30;
+    put_left(x0, 0, tr("id", "ID"), y2, C_DIM, C_BG);
+    put_left(x0, 4, tr("name", "Name"), y2, C_DIM, C_BG);
+    put_right(x0, 21, 6, tr("cur", "Current"), y2, C_DIM, C_BG);
+    put_right(x0, 28, 6, tr("worst", "Worst"), y2, C_DIM, C_BG);
+    put_right(x0, 35, 6, tr("thr", "Thresh"), y2, C_DIM, C_BG);
+    put_right(x0, 46, 10, tr("raw", "Raw"), y2, C_DIM, C_BG);
+    y2 += 26;
     for (size_t i = 0; i < d.attrs.size(); i++) {
         if (y2 > 1000) break;
         const SmartAttrView& a = d.attrs[i];
         Color rc = a.sev == 2 ? C_RED : a.sev == 1 ? C_AMBER : C_TEXT;
         char idhex[8]; snprintf(idhex, sizeof(idhex), "%02X", (unsigned)a.id);
-        put_left(0, idhex, y2, rc, C_BG);
-        put_left(6, fit(a.name, 52), y2, C_TEXT, C_BG);
-        put_right(60, 7, fmt_num((uint64_t)a.cur), y2, C_TEXT, C_BG);
-        put_right(68, 7, fmt_num((uint64_t)a.worst), y2, C_TEXT, C_BG);
-        put_right(76, 7, fmt_num((uint64_t)a.thresh), y2, C_TEXT, C_BG);
-        put_right(96, 14, a.raw, y2, C_DIMMER, C_BG);
-        y2 += 28;
+        put_left(x0, 0, idhex, y2, rc, C_BG);
+        put_left(x0, 4, fit(a.name, 16), y2, C_TEXT, C_BG);
+        put_right(x0, 21, 6, fmt_num((uint64_t)a.cur), y2, C_TEXT, C_BG);
+        put_right(x0, 28, 6, fmt_num((uint64_t)a.worst), y2, C_TEXT, C_BG);
+        put_right(x0, 35, 6, fmt_num((uint64_t)a.thresh), y2, C_TEXT, C_BG);
+        put_right(x0, 46, 10, fit(a.raw, 10), y2, C_DIMMER, C_BG);
+        y2 += 26;
     }
 }
 
 // ---------------------------------------------------------------- экран: проверка поверхности
 
-static void draw_screen_scan(const DiskView& d, int y0)
+// x0/w - правая панель (проверка поверхности), ~56% ширины экрана.
+static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std::vector<ActKind>& items, bool mineRunning)
 {
     bool mine = g_state.scan.present && g_state.scan.disk == d.id;
     const ScanView& sc = g_state.scan;
     const std::string& job = g_state.job;
 
-    std::string header = tr("scanTitle", "Surface scan") + "   ·   " + short_model(d) + " (" + d.id + ")";
-    draw_text(header, MARGIN_X, y0 + 30, C_TEXT, C_BG);
+    std::string header = tr("scanTitle", "Surface scan") + " · " + short_model(d) + " (" + d.id + ")";
+    draw_text(fit(header, w / g_cellW), x0, y0 + 30, C_TEXT, C_BG);
 
+    // Строка действий: диапазон проверки (From/To, системная клавиатура) и старт/пауза/стоп.
+    int ay = y0 + 54, ah = 40;
+    int n = (int)items.size();
+    int agap = 8;
+    int itemW = n > 0 ? (w - (n - 1) * agap) / n : w;
+    int ax = x0;
+    for (int i = 0; i < n; i++) {
+        bool cur = (g_focus == FOCUS_ACTIONS && g_actionCursor == i);
+        Color bg = cur ? C_EDGE : C_PANEL;
+        fill(ax, ay, itemW, ah, bg);
+        std::string label;
+        switch (items[i]) {
+        case AK_FROM: {
+            char b[32]; snprintf(b, sizeof(b), "%llu", (unsigned long long)g_rangeFromGb);
+            label = tr("act_from", "From") + ": " + b + " GB";
+            break;
+        }
+        case AK_TO: {
+            if (g_rangeToGb == 0) label = tr("act_to", "To") + ": " + tr("act_end", "end");
+            else { char b[32]; snprintf(b, sizeof(b), "%llu", (unsigned long long)g_rangeToGb); label = tr("act_to", "To") + ": " + b + " GB"; }
+            break;
+        }
+        case AK_WHOLE: label = tr("act_whole", "Whole disk"); break;
+        case AK_STARTPAUSE:
+            if (mineRunning) label = (sc.state == "paused") ? tr("hint_resume", "resume") : tr("hint_pause", "pause");
+            else label = tr("hint_start", "start scan");
+            break;
+        case AK_STOP: label = tr("hint_stop", "stop"); break;
+        }
+        put_center(ax + itemW / 2, fit(label, (itemW - 16) / g_cellW), ay + ah - 14, C_TEXT, bg);
+        ax += itemW + agap;
+    }
+
+    int msgY = ay + ah + 30;
     std::string msg;
     if (g_scanBusy) msg = tr("bench", "Measuring read speed…");
     else if (mine && job == "scan") msg = sc.state == "paused" ? tr("paused", "Paused") : sc.state == "stopping" ? tr("stopping", "Stopping…") : tr("running", "Scanning the surface…");
     else if (mine && !sc.msg.empty() && sc.state != "running") msg = tr(("m_" + sc.msg).c_str(), sc.msg.c_str());
     else if (!g_scanMsg.empty()) msg = g_scanMsg;
     else msg = tr("idle", "Ready. The scan only reads data and never writes.");
-    draw_text(msg, MARGIN_X, y0 + 76, C_DIM, C_BG);
+    draw_text(fit(msg, w / g_cellW), x0, msgY, C_DIM, C_BG);
 
     double pct = 0;
     if (mine) { uint64_t tot = sc.to - sc.from; pct = tot > 0 ? 100.0 * (double)sc.done / (double)tot : 0; }
-    int barY = y0 + 106, barW = FRAME_WIDTH - 2 * MARGIN_X, barH = 14;
-    fill(MARGIN_X, barY, barW, barH, Color{ 30, 33, 40 });
-    fill(MARGIN_X, barY, (int)((double)barW * pct / 100.0), barH, Color{ 91, 157, 255 });
+    int barY = msgY + 24, barW = w, barH = 12;
+    fill(x0, barY, barW, barH, Color{ 30, 33, 40 });
+    fill(x0, barY, (int)((double)barW * pct / 100.0), barH, Color{ 91, 157, 255 });
 
-    const int cols = 25, rows = 20, gap = 3, mapW = 1260, cellH = 26;
+    const int cols = 25, rows = 20, gap = 2, cellH = 16;
+    int mapW = (int)(w * 0.62);
     int cellW = (mapW - (cols - 1) * gap) / cols;
-    int mapY = barY + 36;
+    int mapY = barY + 26;
     for (int r = 0; r < rows; r++) {
         for (int c = 0; c < cols; c++) {
             int idx = r * cols + c;
             int v = (mine && idx < (int)sc.map.size()) ? (sc.map[(size_t)idx] - '0') : 0;
-            fill(MARGIN_X + c * (cellW + gap), mapY + r * (cellH + gap), cellW, cellH, hist_color(v));
+            fill(x0 + c * (cellW + gap), mapY + r * (cellH + gap), cellW, cellH, hist_color(v));
         }
     }
     int mapH = rows * (cellH + gap) - gap;
 
-    int legX = MARGIN_X + mapW + 30, legW = FRAME_WIDTH - MARGIN_X - legX;
+    int legX = x0 + mapW + 20, legW = w - mapW - 20;
     int legRowH = mapH / 7;
     for (int i = 1; i <= 7; i++) {
         int ly = mapY + (i - 1) * legRowH;
-        fill(legX, ly, legW, legRowH - 6, C_PANEL);
-        fill(legX + 10, ly + (legRowH - 6) / 2 - 10, 20, 20, hist_color(i));
+        fill(legX, ly, legW, legRowH - 4, C_PANEL);
+        fill(legX + 8, ly + (legRowH - 4) / 2 - 8, 16, 16, hist_color(i));
         char key[4]; snprintf(key, sizeof(key), "h%d", i);
-        draw_text(tr(key, ""), legX + 44, ly + (legRowH - 6) / 2 + 8, C_TEXT, C_PANEL);
-        std::string cs = fmt_num(mine ? sc.hist[i] : 0);
-        draw_text(cs, legX + legW - 24 - (int)cs.size() * g_cellW, ly + (legRowH - 6) / 2 + 8, C_DIM, C_PANEL);
+        draw_text(fit(tr(key, ""), (legW - 36) / g_cellW), legX + 32, ly + (legRowH - 4) / 2 + 7, C_TEXT, C_PANEL);
     }
 
-    int statY = mapY + mapH + 30;
+    int statY = mapY + mapH + 20;
     struct St { std::string k, v; };
     std::vector<St> stats;
     { char b[32]; snprintf(b, sizeof(b), "%.1f %%", pct); stats.push_back(St{ tr("prog", "Progress"), b }); }
@@ -731,13 +801,30 @@ static void draw_screen_scan(const DiskView& d, int y0)
     stats.push_back(St{ tr("left", "Remaining"), (mine && job == "scan" && sc.eta >= 0) ? fmt_time((double)sc.eta) : "—" });
     stats.push_back(St{ tr("pos", "Position"), mine ? fmt_size(sc.from + sc.done) : "—" });
     stats.push_back(St{ tr("bad", "Bad sectors"), mine ? (fmt_num(sc.bad) + (sc.approx ? " *" : "")) : "—" });
-    int sw = (FRAME_WIDTH - 2 * MARGIN_X) / 3;
+    int sw = w / 3;
     for (size_t i = 0; i < stats.size(); i++) {
-        int cx = MARGIN_X + (int)(i % 3) * sw, cy = statY + (int)(i / 3) * 70;
-        fill(cx, cy, sw - 10, 60, C_PANEL);
-        draw_text(stats[i].k, cx + 14, cy + 24, C_DIM, C_PANEL);
-        draw_text(stats[i].v, cx + 14, cy + 50, C_TEXT, C_PANEL);
+        int cx = x0 + (int)(i % 3) * sw, cy = statY + (int)(i / 3) * 56;
+        fill(cx, cy, sw - 10, 48, C_PANEL);
+        draw_text(fit(stats[i].k, (sw - 24) / g_cellW), cx + 12, cy + 20, C_DIM, C_PANEL);
+        draw_text(fit(stats[i].v, (sw - 24) / g_cellW), cx + 12, cy + 42, C_TEXT, C_PANEL);
     }
+}
+
+static void draw_menu_overlay()
+{
+    int w = 460, h = 170;
+    draw_panel(w, h);
+    int x = (FRAME_WIDTH - w) / 2, y = (FRAME_HEIGHT - h) / 2;
+    static const char* keys[2]     = { "menu_refresh",      "menu_quit" };
+    static const char* fallback[2] = { "Refresh disks",     "Shut down the service" };
+    for (int i = 0; i < 2; i++) {
+        int ry = y + 30 + i * 56;
+        bool cur = (g_menuCursor == i);
+        if (cur) fill(x + 20, ry - 8, w - 40, 44, C_EDGE);
+        draw_text(tr(keys[i], fallback[i]), x + 40, ry + 22, C_TEXT, cur ? C_EDGE : C_PANEL);
+    }
+    std::string hint = "{updown} " + tr("hint_select", "select") + "     {cross} " + tr("hint_open", "activate") + "     {circle} " + tr("hint_back", "back");
+    put_center_rich(x + w / 2, hint, y + h - 16, C_DIM, C_PANEL);
 }
 
 static void draw_all(uint64_t now)
@@ -762,7 +849,7 @@ static void draw_all(uint64_t now)
         draw_text(v, FRAME_WIDTH - MARGIN_X - (int)v.size() * g_cellW, BANNER_TOP + 60, C_DIMMER, C_BG);
     }
 
-    int y0 = BANNER_TOP + BANNER_H + 30;
+    int y0 = BANNER_TOP + BANNER_H + 20;
     std::string hint;
 
     if (g_svc == S_FAILED) {
@@ -771,26 +858,36 @@ static void draw_all(uint64_t now)
     } else if (g_svc == S_STOPPED) {
         draw_text(tr("svc_hint_stopped", "Cross - start the service again"), MARGIN_X, y0 + 30, C_DIM, C_BG);
     } else if (g_svc == S_READY) {
+        draw_tab_bar(y0);
+        int bodyY = y0 + ROW_H + 24;
         const DiskView* d = sel_disk();
-        if (g_screen == SCR_DISK && d) {
-            draw_screen_disk(*d, y0);
-            hint = "{circle} " + tr("hint_back", "back") + "     {cross} " + tr("hint_scan", "surface scan");
-        } else if (g_screen == SCR_SCAN && d) {
-            draw_screen_scan(*d, y0);
-            bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
-            if (mineRunning) {
-                std::string pr = (g_state.scan.state == "paused") ? tr("hint_resume", "resume") : tr("hint_pause", "pause");
-                hint = "{cross} " + pr + "     {triangle} " + tr("hint_stop", "stop") + "     {circle} " + tr("hint_back", "back");
-            } else {
-                hint = "{cross} " + tr("hint_start", "start scan") + "     {circle} " + tr("hint_back", "back");
-            }
+
+        if (!g_disksOk) {
+            draw_text(tr("loading_disks", "Reading disks…"), MARGIN_X, bodyY + 30, C_DIM, C_BG);
+        } else if (g_disks.disks.empty()) {
+            draw_text(tr("no_disks", "No disks found"), MARGIN_X, bodyY + 30, C_DIM, C_BG);
+        } else if (!d) {
+            draw_text(tr("pick_disk", "Select a disk above and press Cross"), MARGIN_X, bodyY + 30, C_DIM, C_BG);
         } else {
-            g_screen = SCR_LIST;
-            draw_screen_list(y0);
-            if (!g_disks.disks.empty())
-                hint = "{updown} " + tr("hint_select", "select disk") + "     {cross} " + tr("hint_open", "open disk") + "     {square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
-            else
-                hint = "{square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
+            const int leftW = 840, gapX = 40;
+            int rightX = MARGIN_X + leftW + gapX;
+            int rightW = FRAME_WIDTH - rightX - MARGIN_X;
+            bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
+            std::vector<ActKind> items = action_items(mineRunning);
+            draw_screen_disk(*d, MARGIN_X, leftW, bodyY);
+            draw_screen_scan(*d, rightX, rightW, bodyY, items, mineRunning);
+        }
+
+        if (g_focus == FOCUS_MENU) {
+            hint.clear();
+        } else if (g_focus == FOCUS_ACTIONS) {
+            hint = "{<>} " + tr("hint_switch", "switch") + "     {cross} " + tr("hint_edit", "edit") + "     {updown} " + tr("hint_back", "back");
+        } else if (!g_disks.disks.empty()) {
+            hint = "{<>} " + tr("hint_switch", "switch") + "     {cross} " + tr("hint_open", "select disk");
+            if (d) hint += "     {updown} " + tr("hint_scan", "surface scan");
+            hint += "     {square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_menu", "menu");
+        } else {
+            hint = "{square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_menu", "menu");
         }
     }
 
@@ -799,6 +896,8 @@ static void draw_all(uint64_t now)
     if (!hint.empty() && g_confirm == CONF_NONE) put_center_rich(FRAME_WIDTH / 2, hint, 1010, C_DIM, C_BG);
     std::string credit = "PS4 HDD Tools v" + version_str() + " Created by SergioPoverony and Mr.Claude";
     draw_text(credit, (FRAME_WIDTH - count_cp(credit) * g_cellW) / 2, 1050, C_DIMMER, C_BG);
+
+    if (g_focus == FOCUS_MENU && g_confirm == CONF_NONE) draw_menu_overlay();
 
     if (g_confirm != CONF_NONE) {
         draw_panel(1040, 340);
@@ -832,7 +931,9 @@ static void draw_all(uint64_t now)
 
 // ---------------------------------------------------------------- геймпад
 
-static int g_pad = -1;
+static int  g_pad = -1;
+static int  g_userId = 0;
+static bool g_imeReady = false;    // системные модули клавиатуры загружены (sceSysmoduleLoadModule)
 
 static bool pad_init()
 {
@@ -842,6 +943,7 @@ static bool pad_init()
     sceUserServiceInitialize(&param);
     int userID = 0;
     sceUserServiceGetInitialUser(&userID);
+    g_userId = userID;
     g_pad = scePadOpen(userID, 0, 0, NULL);
     return g_pad >= 0;
 }
@@ -853,6 +955,75 @@ static unsigned pad_read()
     memset(&data, 0, sizeof(data));
     scePadReadState(g_pad, &data);
     return (unsigned)data.buttons;
+}
+
+// Системная клавиатура PS4 (IME Dialog) для полей "от"/"до" в ГБ: предзаполняем текущим значением,
+// после подтверждения (ORBIS_DIALOG_OK) разбираем введённое число обратно в out.
+// ВНИМАНИЕ: нигде в доступных примерах/репозиториях не нашлось готового рабочего использования
+// sceImeDialogInit - реализовано только по заголовочным файлам OpenOrbis, на консоли не проверялось.
+// Если диалог поведёт себя не так, как ожидается (не откроется, зависнет), может потребоваться
+// закрыть приложение или перезапустить консоль.
+static bool keyboard_edit_number(const std::string& title, uint64_t current, uint64_t maxVal, uint64_t& out)
+{
+    if (!g_imeReady) { logf_("ui: ime dialog not ready, skip keyboard"); return false; }
+
+    wchar_t buf[32];
+    wchar_t wtitle[64];
+    memset(buf, 0, sizeof(buf));
+    memset(wtitle, 0, sizeof(wtitle));
+    swprintf(buf, 32, L"%llu", (unsigned long long)current);
+    size_t tn = title.size();
+    if (tn > 63) tn = 63;
+    for (size_t i = 0; i < tn; i++) wtitle[i] = (wchar_t)(unsigned char)title[i]; // заголовок - только ASCII
+
+    OrbisImeDialogSetting setting;
+    memset(&setting, 0, sizeof(setting));
+    setting.userId = (uint32_t)g_userId;
+    setting.type = ORBIS_TYPE_NUMBER;
+    setting.supportedLanguages = 0;
+    setting.enterLabel = ORBIS_BUTTON_LABEL_DEFAULT;
+    setting.inputMethod = ORBIS__DEFAULT;
+    setting.filter = NULL;
+    setting.option = 0;
+    setting.maxTextLength = 10;
+    setting.inputTextBuffer = buf;
+    setting.posx = (float)(FRAME_WIDTH / 2);
+    setting.posy = (float)(FRAME_HEIGHT / 2);
+    setting.horizontalAlignment = ORBIS_H_CENTER;
+    setting.verticalAlignment = ORBIS_V_CENTER;
+    setting.placeholder = NULL;
+    setting.title = wtitle;
+
+    if (sceImeDialogInit(&setting, NULL) != 0) { logf_("ui: sceImeDialogInit failed"); return false; }
+
+    OrbisDialogStatus st;
+    while ((st = sceImeDialogGetStatus()) == ORBIS_DIALOG_STATUS_RUNNING) {
+        // Поддерживаем конвейер вывода живым, пока системный диалог открыт поверх нашего кадра.
+        if (g_scene) {
+            g_scene->SubmitFlip(g_frameID);
+            g_scene->FrameWait(g_frameID);
+            g_scene->FrameBufferSwap();
+            g_frameID++;
+        }
+        usleep(16000);
+    }
+
+    bool ok = false;
+    if (st == ORBIS_DIALOG_STATUS_STOPPED) {
+        OrbisDialogResult res;
+        memset(&res, 0, sizeof(res));
+        if (sceImeDialogGetResult(&res) == 0 && res.endstatus == ORBIS_DIALOG_OK) {
+            unsigned long long v = 0;
+            if (swscanf(buf, L"%llu", &v) == 1) {
+                if (v > maxVal) v = maxVal;
+                out = (uint64_t)v;
+                ok = true;
+            }
+        }
+    }
+    sceImeDialogTerm();
+    g_redraw = 2;
+    return ok;
 }
 
 bool ui_init()
@@ -872,6 +1043,16 @@ bool ui_init()
     // Опыт с GoldHEN SDK (syscall 500) завершён: на консоли вызов не проходит из песочницы
     // обычного приложения (ok=0), путь закрыт - см. HANDOFF.md. Диагностику убрали с экрана.
     bool padOk = pad_init();
+
+    // Системная клавиатура (From/To, ГБ): грузим её системные модули заранее, чтобы при первом
+    // открытии не было задержки/сбоя. Не критично для остального интерфейса, если не загрузится -
+    // просто кнопки полей From/To по Cross ничего не сделают (см. keyboard_edit_number).
+    bool imeMod = sceSysmoduleLoadModule(ORBIS_SYSMODULE_IME_DIALOG) == 0;
+    bool cdMod  = sceSysmoduleLoadModule((enum OrbisSysModule)ORBIS_SYSMODULE_INTERNAL_COMMON_DIALOG) == 0;
+    if (cdMod) sceCommonDialogInitialize();
+    g_imeReady = imeMod && cdMod;
+    logf_("ui: ime dialog modules ime=%d commonDialog=%d", imeMod ? 1 : 0, cdMod ? 1 : 0);
+
     logf_("ui: ready, cell width %d, pad %s", g_cellW, padOk ? "ok" : "FAILED");
     g_ready = true;
     return true;
@@ -890,56 +1071,103 @@ void ui_pump()
     prev = b;
     bool cross    = (pressed & ORBIS_PAD_BUTTON_CROSS) != 0;
     bool circle   = (pressed & ORBIS_PAD_BUTTON_CIRCLE) != 0;
-    bool triangle = (pressed & ORBIS_PAD_BUTTON_TRIANGLE) != 0;
     bool square   = (pressed & ORBIS_PAD_BUTTON_SQUARE) != 0;
     bool options  = (pressed & ORBIS_PAD_BUTTON_OPTIONS) != 0;
     bool up       = (pressed & ORBIS_PAD_BUTTON_UP) != 0;
     bool down     = (pressed & ORBIS_PAD_BUTTON_DOWN) != 0;
+    bool left     = (pressed & ORBIS_PAD_BUTTON_LEFT) != 0;
+    bool right    = (pressed & ORBIS_PAD_BUTTON_RIGHT) != 0;
 
     if (g_confirm != CONF_NONE) {
         if (cross) {
             if (g_confirm == CONF_QUIT) {
                 service_quit();
-                g_svc = S_STOPPED; g_disksOk = false; g_screen = SCR_LIST;
+                g_svc = S_STOPPED; g_disksOk = false; g_selId.clear(); g_focus = FOCUS_TABS;
             } else if (g_confirm == CONF_SCAN_START) {
                 const DiskView* d = sel_disk();
-                if (d) { service_scan_start(d->id, 0, 0); g_nextState = now; }
+                if (d) { service_scan_start(d->id, g_confirmFromGb, g_confirmToGb); g_nextState = now; }
             } else if (g_confirm == CONF_SCAN_STOP) {
                 service_scan_stop(); g_nextState = now;
             }
             g_confirm = CONF_NONE; g_redraw = 2;
         } else if (circle) { g_confirm = CONF_NONE; g_redraw = 2; }
     } else if (options && g_svc == S_READY) {
-        g_confirm = CONF_QUIT; g_redraw = 2;
+        // Options открывает меню из любого места (как и выбор вкладки меню верхней строки).
+        g_focus = FOCUS_MENU; g_menuCursor = 0; g_redraw = 2;
     } else if (g_svc == S_FAILED || g_svc == S_STOPPED) {
         if (cross) { g_svc = S_CHECK; g_redraw = 2; }
     } else if (g_svc == S_READY) {
-        if (g_screen == SCR_LIST) {
-            if ((up || down) && !g_disks.disks.empty()) {
-                int i = sel_idx(); int n = (int)g_disks.disks.size();
-                if (i < 0) i = 0; else i = up ? (i - 1 + n) % n : (i + 1) % n;
-                g_selId = g_disks.disks[(size_t)i].id; g_redraw = 2;
+        int diskCount = (int)g_disks.disks.size();
+
+        if (g_focus == FOCUS_MENU) {
+            const int menuN = 2;
+            if (up || down) { g_menuCursor = up ? (g_menuCursor - 1 + menuN) % menuN : (g_menuCursor + 1) % menuN; g_redraw = 2; }
+            else if (circle) { g_focus = FOCUS_TABS; g_redraw = 2; }
+            else if (cross) {
+                if (g_menuCursor == 0) {
+                    service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false;
+                } else {
+                    g_confirm = CONF_QUIT;
+                }
+                g_focus = FOCUS_TABS; g_redraw = 2;
+            }
+        } else if (g_focus == FOCUS_TABS) {
+            int total = diskCount + 1; // +1 - вкладка меню
+            if ((left || right) && total > 0) {
+                g_tabCursor = left ? (g_tabCursor - 1 + total) % total : (g_tabCursor + 1) % total;
+                g_redraw = 2;
             } else if (cross) {
-                if (sel_disk()) { g_screen = SCR_DISK; g_redraw = 2; }
+                if (g_tabCursor < diskCount) {
+                    g_selId = g_disks.disks[(size_t)g_tabCursor].id;
+                    g_scanMsg.clear();
+                } else {
+                    g_focus = FOCUS_MENU; g_menuCursor = 0;
+                }
+                g_redraw = 2;
+            } else if (down && !g_selId.empty()) {
+                const DiskView* d = sel_disk();
+                bool mineRunning = d && g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
+                std::vector<ActKind> items = action_items(mineRunning);
+                int idx = 0;
+                for (size_t i = 0; i < items.size(); i++) if (items[i] == AK_STARTPAUSE) { idx = (int)i; break; }
+                g_actionCursor = idx;
+                g_focus = FOCUS_ACTIONS;
+                g_redraw = 2;
             } else if (square) {
                 service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false; g_redraw = 2;
             }
-        } else if (g_screen == SCR_DISK) {
-            if (circle) { g_screen = SCR_LIST; g_redraw = 2; }
-            else if (cross) { g_screen = SCR_SCAN; g_scanMsg.clear(); g_redraw = 2; }
-        } else if (g_screen == SCR_SCAN) {
+        } else if (g_focus == FOCUS_ACTIONS) {
             const DiskView* d = sel_disk();
             bool mineRunning = d && g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
-            if (circle) { g_screen = SCR_DISK; g_redraw = 2; }
-            else if (triangle && mineRunning) { g_confirm = CONF_SCAN_STOP; g_redraw = 2; }
-            else if (cross && d) {
-                if (mineRunning) {
-                    if (g_state.scan.state == "paused") service_scan_resume(); else service_scan_pause();
-                    g_nextState = now;
-                } else if (!g_scanBusy && g_state.job == "idle") {
-                    g_scanBusy = true; g_scanMsg.clear();
-                    service_scan_estimate(d->id, 0, 0);
-                    g_nextState = now;
+            std::vector<ActKind> items = action_items(mineRunning);
+            int n = (int)items.size();
+            if (up || down) { g_focus = FOCUS_TABS; g_redraw = 2; }
+            else if (circle) { g_focus = FOCUS_TABS; g_redraw = 2; }
+            else if ((left || right) && n > 0) {
+                g_actionCursor = left ? (g_actionCursor - 1 + n) % n : (g_actionCursor + 1) % n;
+                g_redraw = 2;
+            } else if (cross && d && g_actionCursor >= 0 && g_actionCursor < n) {
+                ActKind k = items[(size_t)g_actionCursor];
+                if (k == AK_FROM) {
+                    uint64_t v = g_rangeFromGb;
+                    if (keyboard_edit_number(tr("kb_from", "From, GB"), v, 999999, v)) g_rangeFromGb = v;
+                } else if (k == AK_TO) {
+                    uint64_t v = g_rangeToGb;
+                    if (keyboard_edit_number(tr("kb_to", "To, GB"), v, 999999, v)) g_rangeToGb = v;
+                } else if (k == AK_WHOLE) {
+                    g_rangeFromGb = 0; g_rangeToGb = 0;
+                } else if (k == AK_STARTPAUSE) {
+                    if (mineRunning) {
+                        if (g_state.scan.state == "paused") service_scan_resume(); else service_scan_pause();
+                        g_nextState = now;
+                    } else if (!g_scanBusy && g_state.job == "idle") {
+                        g_scanBusy = true; g_scanMsg.clear();
+                        g_confirmFromGb = g_rangeFromGb; g_confirmToGb = g_rangeToGb;
+                        service_scan_estimate(d->id, g_rangeFromGb, g_rangeToGb);
+                        g_nextState = now;
+                    }
+                } else if (k == AK_STOP) {
+                    g_confirm = CONF_SCAN_STOP;
                 }
                 g_redraw = 2;
             }

@@ -10,7 +10,7 @@ export DOTNET_ROLL_FORWARD := LatestMajor
 TITLE       := PS4 HDD Tools
 TITLE_ID    := BREW00089
 CONTENT_ID  := IV0000-BREW00089_00-PS4HDDTOOLS00000
-LIBS        := -lc -lkernel -lc++ -lSceNet -lSceVideoOut -lSceSysmodule -lSceFreeType -lScePad -lSceUserService -lSceSystemService
+LIBS        := -lc -lkernel -lc++ -lSceNet -lSceVideoOut -lSceSysmodule -lSceFreeType -lScePad -lSceUserService -lSceSystemService -lSceImeDialog -lSceCommonDialog
 EXTRAFLAGS  := -O2
 
 # Версия приложения = версия службы (из ../src/version.h): приложение сравнивает их при запуске.
