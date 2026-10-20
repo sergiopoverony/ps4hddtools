@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PS4 HDD Tools</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+:root{--bg:#14161a;--panel:#1b1e24;--panel2:#22262d;--line:#2d323b;--text:#e6e9ef;--muted:#8b93a1;--accent:#5b9dff;
+--good:#3fbf72;--warn:#e6a23c;--bad:#e5484d;--tab:#3a3e46;
+--b1:#2f9e5b;--b2:#7bc043;--b3:#e6c229;--b4:#e8892f;--b5:#e5484d;--b6:#8a1c24;--b0:#2a2e36}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+header{display:flex;align-items:stretch;background:#000;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.logo{height:64px;display:block}
+.tabs{display:flex;gap:10px;align-items:flex-end;flex:1;padding:8px 12px 0;overflow-x:auto;min-width:0}
+.tab{background:var(--tab);color:var(--text);border:0;border-radius:10px 10px 0 0;padding:8px 18px 9px;min-width:150px;text-align:left;cursor:pointer;border-bottom:3px solid transparent;font:inherit}
+.tab:hover{background:#464b55}
+.tab.active{background:#4a4f5a;border-bottom-color:var(--accent)}
+.tab b{display:block;font-size:15px;letter-spacing:.3px;white-space:nowrap}
+.tab .st{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:2px;white-space:nowrap}
+.tab small{display:block;color:var(--muted);font-size:11px;white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.dot.s0{background:var(--good)}.dot.s1{background:var(--warn)}.dot.s2{background:var(--bad)}
+.hbar{display:flex;gap:8px;align-items:center;padding:0 14px}
+button.ghost,select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:inherit;cursor:pointer}
+button.ghost:hover{background:#2c313a}
+button.danger{background:#7d252b;border-color:#a3323a}
+main{flex:1;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:12px;padding:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+h2{margin:0 0 10px;font-size:17px;font-weight:600}
+.muted{color:var(--muted)}
+.top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
+.health{min-width:130px;border-radius:8px;padding:8px 14px;text-align:center;color:#fff;font-weight:700;background:var(--panel2)}
+.health small{display:block;font-weight:400;font-size:11px;opacity:.85}
+.health.v0{background:linear-gradient(#2d9d5f,#1f7a47)}.health.v1{background:linear-gradient(#d49a33,#a87420)}.health.v2{background:linear-gradient(#d4444a,#a22a30)}
+.temp{margin-top:6px;border-radius:14px;padding:4px 12px;background:var(--panel2);text-align:center;font-weight:600}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;flex:1;min-width:260px}
+.kv{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;display:flex;justify-content:space-between;gap:8px;min-width:0}
+.kv span:first-child{color:var(--muted);white-space:nowrap}
+.kv span:last-child{text-align:right;overflow-wrap:anywhere}
+.reasons{margin:0 0 12px;padding:0;list-style:none}
+.reasons li{padding:6px 10px;border-radius:6px;margin-bottom:5px;background:var(--panel2);border-left:4px solid var(--warn)}
+.reasons li.s2{border-left-color:var(--bad)}.reasons li.s0{border-left-color:var(--good)}
+.tw{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:4px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel2);color:var(--muted);font-weight:500}
+td:nth-child(2),th:nth-child(2){text-align:left;width:100%}
+td:first-child,th:first-child{text-align:left}
+td.mono{font-family:ui-monospace,Consolas,monospace}
+.ad{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#4d8dff}
+.ad.s1{background:var(--warn)}.ad.s2{background:var(--bad)}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
+.range{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.range label{display:block;font-size:11px;color:var(--muted)}
+.range input{width:92px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+button.big{border:2px solid #444a55;background:var(--panel2);color:var(--text);border-radius:8px;padding:9px 20px;font:inherit;font-weight:600;cursor:pointer}
+button.big.start{border-color:var(--bad);color:#fff;background:#3a1d20}
+button.big:hover:not(:disabled){filter:brightness(1.25)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.bar{height:10px;background:var(--b0);border-radius:6px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+.msg{min-height:20px;margin-bottom:6px}
+.map{display:grid;grid-template-columns:repeat(25,1fr);gap:2px;background:#0f1114;padding:4px;border-radius:6px}
+.map i{height:14px;background:var(--b0);border-radius:2px}
+.map i.c1{background:var(--b1)}.map i.c2{background:var(--b2)}.map i.c3{background:var(--b3)}.map i.c4{background:var(--b4)}.map i.c5{background:var(--b5)}.map i.c6{background:var(--b6);outline:1px solid #ff8a90}
+.leg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
+.leg div{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+.leg i{width:14px;height:14px;border-radius:3px;display:inline-block}
+.leg b{margin-left:auto}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 9px;min-width:0}
+.stat label{display:block;font-size:11px;color:var(--muted)}
+.stat b{font-size:15px;overflow-wrap:anywhere}
+.badl{max-height:70px;overflow:auto;font:12px ui-monospace,Consolas,monospace;color:#ff9a9f;margin-bottom:8px}
+pre.log{margin:0;background:#0f1114;border:1px solid var(--line);border-radius:6px;padding:8px;height:150px;overflow:auto;font:11.5px/1.35 ui-monospace,Consolas,monospace;color:#b5bcc8;white-space:pre-wrap}
+.lh{display:flex;justify-content:space-between;align-items:center;margin:10px 0 4px}
+footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modal.on{display:flex}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:480px;width:100%}
+.box h3{margin:0 0 10px}
+.box p{margin:8px 0}
+.box .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+@media(max-width:1000px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.logo{height:48px}.tab{min-width:120px;padding:6px 12px}.map{grid-template-columns:repeat(20,1fr)}.leg{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header>
+  <img class="logo" src="/logo.png" alt="PS4 HDD Tools">
+  <div class="tabs" id="tabs"></div>
+  <div class="hbar">
+    <button class="ghost" id="btnRefresh" data-i="refresh"></button>
+    <select id="lang"><option value="ru">Русский</option><option value="en">English</option></select>
+    <button class="ghost danger" id="btnQuit" data-i="quit"></button>
+  </div>
+</header>
+
+<main>
+  <section class="panel" id="left"></section>
+  <section class="panel">
+    <h2 data-i="scanTitle"></h2>
+    <div class="ctrl">
+      <div class="range">
+        <div><label data-i="from"></label><input id="rFrom" type="number" min="0" step="1" value="0"></div>
+        <div><label data-i="to"></label><input id="rTo" type="number" min="0" step="1" value="0"></div>
+        <button class="ghost" id="btnFull" data-i="whole"></button>
+      </div>
+      <button class="big start" id="btnStart" data-i="start"></button>
+      <button class="big" id="btnPause" data-i="pause"></button>
+      <button class="big" id="btnStop" data-i="stop"></button>
+    </div>
+    <div class="msg muted" id="msg"></div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="map" id="map"></div>
+    <div class="leg" id="leg"></div>
+    <div class="stats" id="stats"></div>
+    <div class="badl" id="badl"></div>
+    <div class="lh"><b data-i="log"></b><button class="ghost" id="btnLog" data-i="logRefresh"></button></div>
+    <pre class="log" id="log"></pre>
+  </section>
+</main>
+<footer>ps4hddtools v__VERSION__ · Created by SergioPoverony and Mr.Claude · GPLv3</footer>
+
+<div class="modal" id="modal"><div class="box">
+  <h3 id="mTitle"></h3><div id="mBody"></div>
+  <div class="row"><button class="ghost" id="mNo"></button><button class="big start" id="mYes"></button></div>
+</div></div>
+
+<script>
+const VERSION='__VERSION__';
+const T={
+ru:{refresh:'Обновить диски',quit:'Выключить',scanTitle:'Проверка поверхности',from:'С (ГБ)',to:'По (ГБ)',whole:'Весь диск',
+start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
+loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',
+v0:'Здоров',v1:'Внимание',v2:'Плохо',vn:'Нет данных',health:'Состояние',temp:'Температура',
+fw:'Прошивка',serial:'Серийный номер',iface:'Интерфейс',rot:'Скорость вращения',ssd:'SSD',rpm:'об/мин',
+hr:'Всего прочитано',hw:'Всего записано',cycles:'Включений',poh:'Часов работы',cap:'Ёмкость',path:'Устройство',
+attrs:'Показатели SMART',id:'ID',name:'Название',cur:'Текущее',worst:'Худшее',thr:'Порог',raw:'Сырое',
+r_status_fail:'Диск сообщает о скором отказе (SMART RETURN STATUS). Срочно сохраните данные.',
+r_thr:'Показатель «{n}» упал до порога или ниже (значение {v}).',
+r_attr:'{n}: {v}',r_temp:'Высокая температура: {v} °C',ok:'Критичных показателей не обнаружено.',
+idle:'Готово к проверке. Проверка только читает данные, ничего не записывает.',
+bench:'Замер скорости чтения…',refreshing:'Читаю диски и SMART…',
+running:'Идёт проверка поверхности…',paused:'Пауза',stopping:'Останавливаю…',
+m_done_ok:'Проверка завершена: ошибок чтения нет.',m_done_errors:'Проверка завершена: найдены ошибки чтения.',
+m_stopped:'Проверка остановлена.',m_open_failed:'Не удалось открыть диск.',m_device_lost:'Диск перестал отвечать, проверка прервана.',
+speed:'Скорость',elapsed:'Прошло',left:'Осталось',pos:'Позиция',bad:'Плохих секторов',prog:'Выполнено',
+approx:'(оценка: часть блока не проверена по секторам)',badLba:'Проблемные сектора (LBA):',
+h1:'до 20 мс',h2:'до 50 мс',h3:'до 150 мс',h4:'до 500 мс',h5:'свыше 500 мс',h6:'ошибка чтения',
+cTitle:'Запустить проверку диска {d}?',
+cBody:'Будет прочитано {gb} ГБ (с {f} по {t} ГБ). Ожидаемое время: примерно {time} при скорости около {sp} МБ/с. Реальное время может отличаться: скорость падает к концу диска и при ошибках чтения.',
+cWarn:'Диск и консоль будут сильно нагружены, игры и меню могут тормозить. Пока идёт проверка, консоль не уйдёт в спящий режим. Данные не изменяются.',
+cYes:'Начать проверку',cNo:'Отмена',estFail:'Не удалось измерить скорость диска.',
+quitQ:'Выключить ps4hddtools? Чтобы запустить снова, отправьте payload ещё раз (или перезапустите консоль, если он в автозагрузке).',
+qYes:'Выключить',stopQ:'Остановить проверку?',sYes:'Остановить',bye:'ps4hddtools выключен. Страницу можно закрыть.',
+busy:'Сейчас выполняется другая операция.',bad_range:'Неверный диапазон.',err:'Ошибка запроса',noconn:'Нет связи с консолью',
+h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
+an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
+en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
+start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
+loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',
+v0:'Healthy',v1:'Caution',v2:'Bad',vn:'No data',health:'Health',temp:'Temperature',
+fw:'Firmware',serial:'Serial number',iface:'Interface',rot:'Rotation rate',ssd:'SSD',rpm:'rpm',
+hr:'Total host reads',hw:'Total host writes',cycles:'Power cycles',poh:'Power-on hours',cap:'Capacity',path:'Device',
+attrs:'SMART attributes',id:'ID',name:'Name',cur:'Current',worst:'Worst',thr:'Thresh',raw:'Raw',
+r_status_fail:'The drive reports imminent failure (SMART RETURN STATUS). Back up your data now.',
+r_thr:'Attribute "{n}" dropped to or below its threshold (value {v}).',
+r_attr:'{n}: {v}',r_temp:'High temperature: {v} °C',ok:'No critical indicators found.',
+idle:'Ready. The scan only reads data and never writes.',
+bench:'Measuring read speed…',refreshing:'Reading disks and SMART…',
+running:'Scanning the surface…',paused:'Paused',stopping:'Stopping…',
+m_done_ok:'Scan finished: no read errors.',m_done_errors:'Scan finished: read errors found.',
+m_stopped:'Scan stopped.',m_open_failed:'Could not open the disk.',m_device_lost:'The disk stopped responding; scan aborted.',
+speed:'Speed',elapsed:'Elapsed',left:'Remaining',pos:'Position',bad:'Bad sectors',prog:'Progress',
+approx:'(estimate: part of a block was not checked sector by sector)',badLba:'Problem sectors (LBA):',
+h1:'up to 20 ms',h2:'up to 50 ms',h3:'up to 150 ms',h4:'up to 500 ms',h5:'over 500 ms',h6:'read error',
+cTitle:'Start scanning disk {d}?',
+cBody:'{gb} GB will be read (from {f} to {t} GB). Expected time: about {time} at roughly {sp} MB/s. The real time may differ: speed drops toward the end of the disk and on read errors.',
+cWarn:'The disk and the console will be heavily loaded; games and menus may lag. The console will not go to sleep while the scan runs. No data is modified.',
+cYes:'Start scan',cNo:'Cancel',estFail:'Could not measure the disk speed.',
+quitQ:'Shut down ps4hddtools? To start it again, send the payload again (or restart the console if it is in autoload).',
+qYes:'Shut down',stopQ:'Stop the scan?',sYes:'Stop',bye:'ps4hddtools has shut down. You can close this page.',
+busy:'Another operation is running.',bad_range:'Invalid range.',err:'Request failed',noconn:'No connection to the console',
+h:'h',m:'min',s:'s',gb:'GB',tb:'TB',diskN:'Disk',
+an:{}}};
+let lang=(()=>{try{const s=localStorage.getItem('lang');if(s&&T[s])return s}catch(e){}return (navigator.language||'en').toLowerCase().startsWith('ru')?'ru':'en'})();
+const $=id=>document.getElementById(id);
+const t=(k,p)=>{let s=(T[lang][k]??T.en[k]??k);if(p)for(const x in p)s=s.split('{'+x+'}').join(p[x]);return s};
+let disks=[],sel='',st=null,timer=null,loadedOnce=false,busyLocal=false;
+
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+const nf=(n,d=0)=>Number(n).toLocaleString(lang==='ru'?'ru-RU':'en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+function fmtGB(b){return nf(b/1e9,1)+' '+t('gb')}
+function fmtBytes(b){if(b<0)return '—';const tb=b/1e12;return tb>=1?nf(tb,2)+' '+t('tb'):nf(b/1e9,1)+' '+t('gb')}
+function fmtTime(sec){if(sec<0||!isFinite(sec))return '—';sec=Math.round(sec);const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return h?`${h} ${t('h')} ${m} ${t('m')}`:m?`${m} ${t('m')} ${s} ${t('s')}`:`${s} ${t('s')}`}
+
+async function api(path,body){
+  const opt=body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'ps4hdd'},body:JSON.stringify(body)};
+  let r;try{r=await fetch(path,opt)}catch(e){throw new Error(t('noconn'))}
+  let j=null;try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error(t(j&&j.error?j.error:'err'));
+  return j;
+}
+
+function applyLang(){
+  document.documentElement.lang=lang;
+  document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
+  $('lang').value=lang;
+  renderTabs();renderLeft();renderRight();
+}
+
+function verdictOf(d){return d.smart&&d.smart.verdict>=0?d.smart.verdict:-1}
+function shortModel(d){return d.smart&&d.smart.model?d.smart.model.split('-')[0]:d.id.toUpperCase()}
+function renderTabs(){
+  const box=$('tabs');box.textContent='';
+  if(!loadedOnce||(!disks.length&&busyLocal)){box.appendChild(el('span','muted',t('loading')));return}
+  if(!disks.length){box.appendChild(el('span','muted',t('noDisks')));return}
+  disks.forEach(d=>{
+    const b=el('button','tab'+(d.id===sel?' active':''));
+    b.appendChild(el('b','',shortModel(d)));
+    const v=verdictOf(d);const s=el('span','st');
+    const dot=el('i','dot'+(v>=0?' s'+v:''));s.appendChild(dot);
+    let label=!d.smart?t('noSmart'):v>=0?t('v'+v):t('vn');
+    if(st&&st.scan&&st.scan.disk===d.id&&(st.job==='scan')){label=t('running').replace('…','')+' '+pct(st.scan).toFixed(0)+'%'}
+    s.appendChild(el('span','',label));b.appendChild(s);
+    b.appendChild(el('small','',(d.label?d.label+' · ':'')+d.id+' · '+fmtBytes(d.bytes)));
+    b.onclick=()=>{sel=d.id;renderTabs();renderLeft();renderRight()};
+    box.appendChild(b);
+  });
+}
+const cur=()=>disks.find(d=>d.id===sel)||null;
+
+function kv(k,v){const d=el('div','kv');d.appendChild(el('span','',k));d.appendChild(el('span','',v));return d}
+function renderLeft(){
+  const box=$('left');box.textContent='';
+  const d=cur();
+  if(!d){box.appendChild(el('h2','',loadedOnce?t('noDisks'):t('loading')));return}
+  const s=d.smart;
+  box.appendChild(el('h2','',(s&&s.model?s.model:d.id)+' : '+fmtGB(d.bytes)));
+  if(!s){box.appendChild(el('p','muted',t('noSmart')));box.appendChild(kv(t('path'),d.path));return}
+  const top=el('div','top');
+  const left=el('div');
+  const h=el('div','health'+(s.verdict>=0?' v'+s.verdict:''));
+  h.appendChild(document.createTextNode(s.verdict>=0?t('v'+s.verdict):t('vn')));h.appendChild(el('small','',t('health')));
+  left.appendChild(h);
+  if(s.temp>=0)left.appendChild(el('div','temp',s.temp+' °C'));
+  top.appendChild(left);
+  const g=el('div','grid');
+  g.appendChild(kv(t('fw'),s.fw||'—'));g.appendChild(kv(t('hr'),s.hr>=0?fmtBytes(s.hr):'—'));
+  g.appendChild(kv(t('serial'),s.serial||'—'));g.appendChild(kv(t('hw'),s.hw>=0?fmtBytes(s.hw):'—'));
+  g.appendChild(kv(t('iface'),(s.proto||'')+(s.bridge?' · '+s.bridge:'')));g.appendChild(kv(t('cycles'),s.cycles>=0?nf(s.cycles):'—'));
+  g.appendChild(kv(t('rot'),s.rpm===1?t('ssd'):s.rpm>1?s.rpm+' '+t('rpm'):'—'));g.appendChild(kv(t('poh'),s.poh>=0?nf(s.poh):'—'));
+  top.appendChild(g);box.appendChild(top);
+  const ul=el('ul','reasons');
+  if(!s.reasons.length&&s.verdict===0){const li=el('li','s0',t('ok'));ul.appendChild(li)}
+  s.reasons.forEach(r=>{
+    const name=(T[lang].an&&T[lang].an[r.id])||(s.attrs.find(a=>a.id===r.id)||{}).n||String(r.id);
+    let txt;
+    if(r.c==='status_fail')txt=t('r_status_fail');else if(r.c==='thr')txt=t('r_thr',{n:name,v:r.v});
+    else if(r.c==='temp')txt=t('r_temp',{v:r.v});else txt=t('r_attr',{n:name,v:nf(r.v)});
+    ul.appendChild(el('li','s'+r.s,txt));
+  });
+  box.appendChild(ul);
+  box.appendChild(el('h2','',t('attrs')));
+  const w=el('div','tw'),tb=el('table');
+  const hr=el('tr');['id','name','cur','worst','thr','raw'].forEach(k=>hr.appendChild(el('th','',t(k))));
+  const th=el('thead');th.appendChild(hr);tb.appendChild(th);
+  const body=el('tbody');
+  s.attrs.forEach(a=>{
+    const tr=el('tr');const c0=el('td');c0.appendChild(el('i','ad s'+a.s));c0.appendChild(document.createTextNode(a.id.toString(16).toUpperCase().padStart(2,'0')));
+    tr.appendChild(c0);tr.appendChild(el('td','',(T[lang].an&&T[lang].an[a.id])||a.n));
+    tr.appendChild(el('td','',a.c));tr.appendChild(el('td','',a.w));tr.appendChild(el('td','',a.t||'—'));
+    tr.appendChild(el('td','mono',a.rx));body.appendChild(tr);
+  });
+  tb.appendChild(body);w.appendChild(tb);box.appendChild(w);
+}
+
+const pct=s=>{const tot=s.to-s.from;return tot>0?100*s.done/tot:0};
+const COLORS=['','--b1','--b2','--b3','--b4','--b5','--b6'];
+function renderRight(){
+  const map=$('map');
+  if(map.children.length!==500){map.textContent='';for(let i=0;i<500;i++)map.appendChild(document.createElement('i'))}
+  const sc=st&&st.scan,job=st?st.job:'idle';
+  const mine=sc&&sc.disk===sel;
+  const m=mine?sc.map:'';
+  for(let i=0;i<500;i++){const c=m?m.charCodeAt(i)-48:0;map.children[i].className=c>0?'c'+c:''}
+  // легенда
+  const leg=$('leg');leg.textContent='';
+  for(let i=1;i<=6;i++){const d=el('div');const sw=el('i');sw.style.background='var('+COLORS[i]+')';d.appendChild(sw);d.appendChild(el('span','',t('h'+i)));d.appendChild(el('b','',mine?nf(sc.hist[i-1]):'0'));leg.appendChild(d)}
+  // сообщение
+  let msg=t('idle');
+  if(job==='refresh')msg=t('refreshing');else if(job==='bench')msg=t('bench');
+  else if(sc&&(job==='scan'||sc.state!=='running')){
+    if(job==='scan')msg=sc.state==='paused'?t('paused'):sc.state==='stopping'?t('stopping'):t('running');
+    else msg=t('m_'+sc.msg)||sc.msg;
+    if(sc.disk!==sel)msg=t('diskN')+' '+sc.disk+': '+msg;
+  }
+  $('msg').textContent=msg;
+  const p=mine?pct(sc):0;$('prog').style.width=p+'%';
+  // статистика
+  const stt=$('stats');stt.textContent='';
+  const add=(k,v)=>{const d=el('div','stat');d.appendChild(el('label','',k));d.appendChild(el('b','',v));stt.appendChild(d)};
+  add(t('prog'),nf(p,1)+' %');
+  add(t('speed'),mine&&sc.speed>0?nf(sc.speed/1e6,1)+' '+(lang==='ru'?'МБ/с':'MB/s'):'—');
+  add(t('elapsed'),mine?fmtTime(sc.elapsed):'—');
+  add(t('left'),mine&&job==='scan'&&sc.eta>=0?fmtTime(sc.eta):'—');
+  add(t('pos'),mine?fmtGB(sc.from+sc.done):'—');
+  add(t('bad'),mine?nf(sc.bad)+(sc.approx?' *':''):'—');
+  const bl=$('badl');bl.textContent='';
+  if(mine&&sc.badlba.length){bl.textContent=t('badLba')+' '+sc.badlba.join(', ')+(sc.approx?' '+t('approx'):'')}
+  // кнопки
+  const running=job==='scan';const busy=job!=='idle'||busyLocal;
+  $('btnStart').disabled=busy||!sel;
+  $('btnPause').disabled=!(running&&sc&&(sc.state==='running'||sc.state==='paused'));
+  $('btnPause').textContent=(running&&sc&&sc.state==='paused')?t('resume'):t('pause');
+  $('btnStop').disabled=!(running||job==='bench');
+  $('btnRefresh').disabled=busy;
+  $('rFrom').disabled=$('rTo').disabled=$('btnFull').disabled=busy;
+}
+
+function setDefaultRange(){const d=cur();$('rFrom').value=0;$('rTo').value=d?Math.ceil(d.bytes/1e9):0}
+
+async function loadDisks(){
+  const j=await api('/api/disks');disks=j.disks;loadedOnce=j.loaded;
+  if(!disks.find(d=>d.id===sel))sel=disks.length?disks[0].id:'';
+  renderTabs();renderLeft();setDefaultRange();
+}
+async function loadLog(){try{const r=await fetch('/api/log?n=6000');const tx=await r.text();const p=$('log');const bottom=p.scrollTop+p.clientHeight>=p.scrollHeight-20;p.textContent=tx;if(bottom)p.scrollTop=p.scrollHeight}catch(e){}}
+
+async function pollOnce(){
+  try{
+    const prev=st;st=await api('/api/state');
+    if(prev&&prev.job!=='idle'&&st.job==='idle'){await loadDisks();loadLog()}
+    renderTabs();renderRight();
+    if(st.job!=='idle')loadLog();
+    if(st.job==='idle'&&timer){clearInterval(timer);timer=null}
+  }catch(e){$('msg').textContent=e.message}
+}
+function startPolling(){if(!timer)timer=setInterval(pollOnce,1500);pollOnce()}  // опрос только пока идёт операция
+
+async function doRefresh(){
+  busyLocal=true;renderTabs();renderRight();
+  try{await api('/api/refresh',{});startPolling();await waitIdle();await loadDisks()}catch(e){$('msg').textContent=e.message}
+  busyLocal=false;renderTabs();renderRight();loadLog();
+}
+function waitIdle(){return new Promise(res=>{const f=async()=>{try{st=await api('/api/state')}catch(e){}if(!st||st.job==='idle'){renderRight();res()}else setTimeout(f,1000)};setTimeout(f,700)})}
+
+function askModal(title,bodyNodes,yes,no){
+  return new Promise(res=>{
+    $('mTitle').textContent=title;const b=$('mBody');b.textContent='';bodyNodes.forEach(n=>b.appendChild(n));
+    $('mYes').textContent=yes;$('mNo').textContent=no;$('modal').classList.add('on');
+    const done=v=>{$('modal').classList.remove('on');res(v)};
+    $('mYes').onclick=()=>done(true);$('mNo').onclick=()=>done(false);
+  });
+}
+function range(){
+  const d=cur();let f=parseFloat($('rFrom').value)||0,to=parseFloat($('rTo').value)||0;
+  const full=d?d.bytes/1e9:0;if(to<=0||to>full)to=full;if(f<0)f=0;return {from_gb:f,to_gb:to,full}
+}
+
+async function onStart(){
+  const d=cur();if(!d)return;const r=range();
+  if(r.from_gb>=r.to_gb){$('msg').textContent=t('bad_range');return}
+  busyLocal=true;renderRight();$('msg').textContent=t('bench');
+  try{
+    await api('/api/scan/estimate',{disk:d.id,from_gb:r.from_gb,to_gb:r.to_gb});
+    startPolling();await waitIdle();
+    const e=st.est;
+    if(!e||!e.ok||e.disk!==d.id){busyLocal=false;renderRight();$('msg').textContent=t('estFail');return}
+    const gb=(e.to-e.from)/1e9;
+    const p1=el('p','',t('cBody',{gb:nf(gb,1),f:nf(e.from/1e9,1),t:nf(e.to/1e9,1),time:fmtTime(e.seconds),sp:nf(e.speed/1e6,0)}));
+    const p2=el('p','muted',t('cWarn'));
+    const ok=await askModal(t('cTitle',{d:d.id}),[p1,p2],t('cYes'),t('cNo'));
+    if(!ok){busyLocal=false;renderRight();return}
+    await api('/api/scan/start',{disk:d.id,from_gb:r.from_gb,to_gb:r.to_gb});
+    busyLocal=false;startPolling();
+  }catch(e){busyLocal=false;$('msg').textContent=e.message;renderRight()}
+}
+
+$('btnStart').onclick=onStart;
+$('btnFull').onclick=setDefaultRange;
+$('btnPause').onclick=async()=>{try{await api(st&&st.scan&&st.scan.state==='paused'?'/api/scan/resume':'/api/scan/pause',{});pollOnce()}catch(e){$('msg').textContent=e.message}};
+$('btnStop').onclick=async()=>{if(!await askModal(t('stopQ'),[],t('sYes'),t('cNo')))return;try{await api('/api/scan/stop',{});startPolling()}catch(e){$('msg').textContent=e.message}};
+$('btnRefresh').onclick=doRefresh;
+$('btnLog').onclick=loadLog;
+$('btnQuit').onclick=async()=>{if(!await askModal(t('quitQ'),[],t('qYes'),t('cNo')))return;try{await api('/quit',{})}catch(e){}if(timer)clearInterval(timer);document.body.textContent=t('bye');document.body.style.padding='24px'};
+$('lang').onchange=e=>{lang=e.target.value;try{localStorage.setItem('lang',lang)}catch(x){}applyLang()};
+
+(async function init(){
+  applyLang();
+  try{
+    st=await api('/api/state');
+    if(st.loaded){await loadDisks()}else{await doRefresh()}
+    if(st.job!=='idle')startPolling();else renderRight();
+    loadLog();
+  }catch(e){$('msg').textContent=e.message}
+})();
+</script>
+</body></html>
