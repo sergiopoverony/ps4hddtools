@@ -6,7 +6,7 @@ Check the health of your PS4 drive **without taking the console apart**. No need
 
 PS4 HDD Tools shows the drive's SMART status and scans its surface for read errors. The page is served by the console itself on your home network.
 
-Version **1.2.0.9** · License **GPLv3** · Created by SergioPoverony and Mr.Claude
+Version **1.2.0.10** · License **GPLv3** · Created by SergioPoverony and Mr.Claude
 
 ## Features
 - Shows every drive: internal HDD/SSD, USB drives and extended storage. Each drive gets a tab with its name and a quick verdict: **Healthy**, **Caution** or **Bad**.
