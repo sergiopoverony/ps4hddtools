@@ -2,6 +2,11 @@
 # Нужен OpenOrbis PS4 Toolchain и переменная OO_PS4_TOOLCHAIN. Сборка: make (в этой папке).
 # Перед сборкой соберите службу в корне проекта (make), чтобы был ../release/ps4hddtools.elf.
 
+# PkgTool.Core работает на .NET: без этих настроек он падает, если в системе нет библиотеки ICU,
+# или ругается на версию .NET.
+export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT := 1
+export DOTNET_ROLL_FORWARD := LatestMajor
+
 TITLE       := PS4 HDD Tools
 TITLE_ID    := BREW00089
 CONTENT_ID  := IV0000-BREW00089_00-PS4HDDTOOLS00000
