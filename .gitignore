@@ -2,3 +2,4 @@ build/
 *.elf
 !release/*.elf
 __pycache__/
+docs/HANDOFF.md
