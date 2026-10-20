@@ -7,7 +7,7 @@
 <style>
 :root{--bg:#14161a;--panel:#1b1e24;--panel2:#22262d;--line:#2d323b;--text:#e6e9ef;--muted:#8b93a1;--accent:#5b9dff;
 --good:#3fbf72;--warn:#e6a23c;--bad:#e5484d;--tab:#3a3e46;
---b1:#2f9e5b;--b2:#7bc043;--b3:#e6c229;--b4:#e8892f;--b5:#e5484d;--b6:#8a1c24;--b0:#2a2e36}
+--b1:#f2f2f2;--b2:#9a9a9a;--b3:#5e5e5e;--b4:#19e619;--b5:#ff8c00;--b6:#ff1a1a;--b7:#1a1aff;--b0:#2a2e36}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;display:flex;flex-direction:column}
@@ -75,10 +75,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .msg{min-height:20px;margin-bottom:6px}
 .map{display:grid;grid-template-columns:repeat(25,1fr);gap:2px;background:#0f1114;padding:4px;border-radius:6px}
 .map i{height:14px;background:var(--b0);border-radius:2px}
-.map i.c1{background:var(--b1)}.map i.c2{background:var(--b2)}.map i.c3{background:var(--b3)}.map i.c4{background:var(--b4)}.map i.c5{background:var(--b5)}.map i.c6{background:var(--b6);outline:1px solid #ff8a90}
+.map i.c1{background:var(--b1)}.map i.c2{background:var(--b2)}.map i.c3{background:var(--b3)}.map i.c4{background:var(--b4)}.map i.c5{background:var(--b5)}.map i.c6{background:var(--b6)}.map i.c7{background:var(--b7)}
 .leg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
 .leg div{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
-.leg i{width:14px;height:14px;border-radius:3px;display:inline-block}
+.leg i{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid #0008;color:#fff;font:700 11px/12px sans-serif;text-align:center;font-style:normal}
 .leg b{margin-left:auto}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
 .stat{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 9px;min-width:0}
@@ -185,14 +185,14 @@ m_done_ok:'Проверка завершена: ошибок чтения нет
 m_stopped:'Проверка остановлена.',m_open_failed:'Не удалось открыть диск.',m_device_lost:'Диск перестал отвечать, проверка прервана.',
 speed:'Скорость',elapsed:'Прошло',left:'Осталось',pos:'Позиция',bad:'Плохих секторов',prog:'Выполнено',
 approx:'(оценка: часть блока не проверена по секторам)',badLba:'Проблемные сектора (LBA):',
-h1:'до 20 мс',h2:'до 50 мс',h3:'до 150 мс',h4:'до 500 мс',h5:'свыше 500 мс',h6:'ошибка чтения',
+h1:'до 40 мс',h2:'до 160 мс',h3:'до 400 мс',h4:'до 1,6 с',h5:'до 4,8 с',h6:'дольше 4,8 с',h7:'ошибка чтения',
 cTitle:'Запустить проверку диска {d}?',
 cBody:'Будет прочитано {gb} ГБ (с {f} по {t} ГБ). Ожидаемое время: примерно {time} при скорости около {sp} МБ/с. Реальное время может отличаться: скорость падает к концу диска и при ошибках чтения.',
 cWarn:'Диск и консоль будут сильно нагружены, игры и меню могут тормозить. Пока идёт проверка, консоль не уйдёт в спящий режим. Данные не изменяются.',
 cYes:'Начать проверку',cNo:'Отмена',estFail:'Не удалось измерить скорость диска.',
 quitQ:'Выключить ps4hddtools? Чтобы запустить снова, отправьте payload ещё раз (или перезапустите консоль, если он в автозагрузке).',
 qYes:'Выключить',stopQ:'Остановить проверку?',sYes:'Остановить',bye:'ps4hddtools выключен. Страницу можно закрыть.',
-busy:'Сейчас выполняется другая операция.',bad_range:'Неверный диапазон.',err:'Ошибка запроса',noconn:'Нет связи с консолью',
+busy:'Сейчас выполняется другая операция.',bad_range:'Неверный диапазон.',err:'Ошибка запроса',noconn:'Нет связи с консолью',lost:'Связь потеряна: возможно, программа была перезапущена. Обновите страницу.',
 h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
 an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
 en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
@@ -212,14 +212,14 @@ m_done_ok:'Scan finished: no read errors.',m_done_errors:'Scan finished: read er
 m_stopped:'Scan stopped.',m_open_failed:'Could not open the disk.',m_device_lost:'The disk stopped responding; scan aborted.',
 speed:'Speed',elapsed:'Elapsed',left:'Remaining',pos:'Position',bad:'Bad sectors',prog:'Progress',
 approx:'(estimate: part of a block was not checked sector by sector)',badLba:'Problem sectors (LBA):',
-h1:'up to 20 ms',h2:'up to 50 ms',h3:'up to 150 ms',h4:'up to 500 ms',h5:'over 500 ms',h6:'read error',
+h1:'up to 40 ms',h2:'up to 160 ms',h3:'up to 400 ms',h4:'up to 1.6 s',h5:'up to 4.8 s',h6:'over 4.8 s',h7:'read error',
 cTitle:'Start scanning disk {d}?',
 cBody:'{gb} GB will be read (from {f} to {t} GB). Expected time: about {time} at roughly {sp} MB/s. The real time may differ: speed drops toward the end of the disk and on read errors.',
 cWarn:'The disk and the console will be heavily loaded; games and menus may lag. The console will not go to sleep while the scan runs. No data is modified.',
 cYes:'Start scan',cNo:'Cancel',estFail:'Could not measure the disk speed.',
 quitQ:'Shut down ps4hddtools? To start it again, send the payload again (or restart the console if it is in autoload).',
 qYes:'Shut down',stopQ:'Stop the scan?',sYes:'Stop',bye:'ps4hddtools has shut down. You can close this page.',
-busy:'Another operation is running.',bad_range:'Invalid range.',err:'Request failed',noconn:'No connection to the console',
+busy:'Another operation is running.',bad_range:'Invalid range.',err:'Request failed',noconn:'No connection to the console',lost:'Connection lost: the program may have been restarted. Reload the page.',
 h:'h',m:'min',s:'s',gb:'GB',tb:'TB',diskN:'Disk',
 an:{}}};
 let lang=(()=>{try{const s=localStorage.getItem('lang');if(s&&T[s])return s}catch(e){}return (navigator.language||'en').toLowerCase().startsWith('ru')?'ru':'en'})();
@@ -327,7 +327,7 @@ function renderLeft(){
 }
 
 const pct=s=>{const tot=s.to-s.from;return tot>0?100*s.done/tot:0};
-const COLORS=['','--b1','--b2','--b3','--b4','--b5','--b6'];
+const COLORS=['','--b1','--b2','--b3','--b4','--b5','--b6','--b7'];
 function renderRight(){
   const map=$('map');
   if(map.children.length!==500){map.textContent='';for(let i=0;i<500;i++)map.appendChild(document.createElement('i'))}
@@ -337,7 +337,7 @@ function renderRight(){
   for(let i=0;i<500;i++){const c=m?m.charCodeAt(i)-48:0;map.children[i].className=c>0?'c'+c:''}
   // легенда
   const leg=$('leg');leg.textContent='';
-  for(let i=1;i<=6;i++){const d=el('div');const sw=el('i');sw.style.background='var('+COLORS[i]+')';d.appendChild(sw);d.appendChild(el('span','',t('h'+i)));d.appendChild(el('b','',mine?nf(sc.hist[i-1]):'0'));leg.appendChild(d)}
+  for(let i=1;i<=7;i++){const d=el('div');const sw=el('i');if(i===7)sw.textContent='×';sw.style.background='var('+COLORS[i]+')';d.appendChild(sw);d.appendChild(el('span','',t('h'+i)));d.appendChild(el('b','',mine?nf(sc.hist[i-1]):'0'));leg.appendChild(d)}
   // сообщение
   let msg=t('idle');
   if(job==='refresh')msg=t('refreshing');else if(job==='bench')msg=t('bench');
@@ -385,8 +385,9 @@ async function pollOnce(){
     renderTabs();renderRight();
     if(st.job!=='idle')loadLog();
     if(st.job==='idle'&&timer){clearInterval(timer);timer=null}
-  }catch(e){$('msg').textContent=e.message}
+  pollFails=0}catch(e){pollFails++;$('msg').textContent=pollFails>=3?t('lost'):e.message}
 }
+let pollFails=0;
 function startPolling(){if(!timer)timer=setInterval(pollOnce,1500);pollOnce()}  // опрос только пока идёт операция
 
 async function doRefresh(){

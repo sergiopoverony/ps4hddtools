@@ -45,7 +45,7 @@ def wait_idle(limit=60):
 # ---------- 1. SMART и диски
 p = start(cfg='{"realloc":3}')
 s = json.loads(get('/api/state'))
-check('state: версия 1.0.0.16', s['v'] == '1.0.0.16' and s['job'] == 'idle' and not s['loaded'])
+check('state: версия 1.0.0.17', s['v'] == '1.0.0.17' and s['job'] == 'idle' and not s['loaded'])
 check('в покое диски не читаются', json.loads(get('/api/disks'))['disks'] == [])
 check('POST без заголовка отклонён', post('/api/refresh', headers={'Content-Type': 'text/plain'})[0] == 403)
 check('refresh принят', post('/api/refresh')[0] == 200)
@@ -60,10 +60,10 @@ check('вердикт «внимание» из-за 3 переназначен�
 check('пороги прочитаны', any(a['id'] == 5 and a['t'] == 10 for a in sm['attrs']))
 check('статус исправен', sm['status'] == 0)
 check('rpm 5400', sm['rpm'] == 5400)
-check('index.html отдаётся и версия подставлена', b'1.0.0.16' in get('/') and b'__VERSION__' not in get('/'))
+check('index.html отдаётся и версия подставлена', b'1.0.0.17' in get('/') and b'__VERSION__' not in get('/'))
 check('logo/favicon PNG', get('/logo.png')[:4] == b'\x89PNG' and get('/favicon.ico')[:4] == b'\x89PNG')
 check('qr.png и qr_paypal.png отдаются', get('/qr.png')[:4] == b'\x89PNG' and get('/qr_paypal.png')[:4] == b'\x89PNG')
-check('log отдаётся', b'version 1.0.0.16' in get('/api/log'))
+check('log отдаётся', b'version 1.0.0.17' in get('/api/log'))
 
 # ---------- 2. неверные запросы
 check('estimate неизвестного диска', post('/api/scan/estimate', {'disk': '../../etc/passwd'})[0] == 400)
@@ -90,8 +90,8 @@ check('scan завершён с ошибками', sc['state'] == 'done' and sc[
 check('плохих секторов ровно 3', sc['bad'] == 3, sc['bad'])
 check('LBA плохих секторов', sc['badlba'] == [10 * 2048 + 1, 10 * 2048 + 2, 10 * 2048 + 3], sc['badlba'])
 check('весь диск прочитан', sc['done'] == 64 * 1048576)
-check('гистограмма: 63 хороших блока + 1 с ошибкой', sum(sc['hist'][:5]) == 63 and sc['hist'][5] == 1, sc['hist'])
-check('карта: есть красная ячейка', '6' in sc['map'] and len(sc['map']) == 500)
+check('гистограмма: 63 хороших блока + 1 с ошибкой', sum(sc['hist'][:6]) == 63 and sc['hist'][6] == 1, sc['hist'])
+check('карта: есть красная ячейка', '7' in sc['map'] and len(sc['map']) == 500)
 check('keep-awake вызывался', b'ticks=' in get('/api/log') and int(get('/api/log').split(b'ticks=')[-1].split()[0]) >= 1)
 p.terminate(); p.wait()
 

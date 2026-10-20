@@ -37,7 +37,7 @@ struct ScanInfo {
     uint64_t from = 0, to = 0, done = 0;
     double speed = 0, elapsed = 0;
     int64_t eta = -1;
-    uint64_t hist[7] = {0};  // [1..5] время чтения блока, [6] ошибка
+    uint64_t hist[8] = {0};  // [1..6] время чтения блока, [7] ошибка
     uint64_t bad_sectors = 0;
     bool bad_approx = false;
     std::vector<uint64_t> bad_lba;
@@ -235,11 +235,12 @@ bool engine_estimate(const std::string& disk, double from_gb, double to_gb, std:
 // ---------------------------------------------------------------- проверка поверхности
 
 static int bucket_for_ms(double ms) {
-    if (ms <= 20) return 1;
-    if (ms <= 50) return 2;
-    if (ms <= 150) return 3;
-    if (ms <= 500) return 4;
-    return 5;
+    if (ms <= 40) return 1;
+    if (ms <= 160) return 2;
+    if (ms <= 400) return 3;
+    if (ms <= 1600) return 4;
+    if (ms <= 4800) return 5;
+    return 6;
 }
 
 #ifdef HOST_TEST
@@ -329,7 +330,7 @@ static void scan_job(DiskInfo d, uint64_t from, uint64_t to) {
             bucket = bucket_for_ms(ms);
             dead_blocks = 0;
         } else {
-            bucket = 6;
+            bucket = 7;
             uint64_t good = got > 0 ? ((uint64_t)got / ss) * ss : 0;
             int err_first = errno;
             auto bstart = Clock::now();
@@ -513,7 +514,7 @@ std::string engine_state_json() {
         o += ",\"bad\":"; ju(o, s.bad_sectors);
         o += ",\"approx\":"; o += s.bad_approx ? "true" : "false";
         o += ",\"hist\":[";
-        for (int i = 1; i <= 6; ++i) { if (i > 1) o += ','; ju(o, s.hist[i]); }
+        for (int i = 1; i <= 7; ++i) { if (i > 1) o += ','; ju(o, s.hist[i]); }
         o += "],\"badlba\":[";
         for (size_t i = 0; i < s.bad_lba.size(); ++i) { if (i) o += ','; ju(o, s.bad_lba[i]); }
         o += "],\"map\":"; jstr(o, s.map);
