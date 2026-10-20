@@ -20,3 +20,5 @@ with open(out, 'w') as f:
     f.write(arr('ASSET_INDEX_HTML', html))
     f.write(arr('ASSET_TITLE_PNG', open(os.path.join(root, 'assets', 'title.png'), 'rb').read()))
     f.write(arr('ASSET_ICON_PNG', open(os.path.join(root, 'assets', 'icon.png'), 'rb').read()))
+    f.write(arr('ASSET_QR_PAYPAL_PNG', open(os.path.join(root, 'assets', 'qr_paypal.png'), 'rb').read()))
+    f.write(arr('ASSET_QR_PNG', open(os.path.join(root, 'assets', 'qr_sbp.png'), 'rb').read()))

@@ -35,10 +35,10 @@ h2{margin:0 0 10px;font-size:17px;font-weight:600}
 .health small{display:block;font-weight:400;font-size:11px;opacity:.85}
 .health.v0{background:linear-gradient(#2d9d5f,#1f7a47)}.health.v1{background:linear-gradient(#d49a33,#a87420)}.health.v2{background:linear-gradient(#d4444a,#a22a30)}
 .temp{margin-top:6px;border-radius:14px;padding:4px 12px;background:var(--panel2);text-align:center;font-weight:600}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;flex:1;min-width:260px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 12px;flex:1;min-width:260px}
 .kv{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;display:flex;justify-content:space-between;gap:8px;min-width:0}
 .kv span:first-child{color:var(--muted);white-space:nowrap}
-.kv span:last-child{text-align:right;overflow-wrap:anywhere}
+.kv span:last-child{text-align:right;overflow-wrap:anywhere;word-break:normal}
 .reasons{margin:0 0 12px;padding:0;list-style:none}
 .reasons li{padding:6px 10px;border-radius:6px;margin-bottom:5px;background:var(--panel2);border-left:4px solid var(--warn)}
 .reasons li.s2{border-left-color:var(--bad)}.reasons li.s0{border-left-color:var(--good)}
@@ -85,6 +85,13 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 .box .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
 @media(max-width:1000px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.logo{height:48px}.tab{min-width:120px;padding:6px 12px}.map{grid-template-columns:repeat(20,1fr)}.leg{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+.support{position:fixed;left:14px;bottom:14px;z-index:5;width:210px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 12px 14px;box-shadow:0 8px 28px rgba(0,0,0,.55);display:none;text-align:center;animation:pop .35s ease-out}
+.support.on{display:block}
+.support b{display:block;margin:0 22px 8px 0;font-size:14px;text-align:left}
+.support img{width:100%;display:block;border-radius:8px;background:#fff}
+.support .x{position:absolute;top:6px;right:8px;width:26px;height:26px;border-radius:50%;border:0;background:var(--panel2);color:var(--text);font-size:16px;line-height:1;cursor:pointer}
+.support .x:hover{background:#333944}
+@keyframes pop{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 </style></head>
 <body>
 <header>
@@ -123,6 +130,7 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 </main>
 <footer>ps4hddtools v__VERSION__ · Created by SergioPoverony and Mr.Claude · GPLv3</footer>
 
+<div class="support" id="support"><button class="x" id="supportX" aria-label="×" title="×">×</button><b data-i="support"></b><img id="supportImg" src="/qr.png" alt="QR"></div>
 <div class="modal" id="modal"><div class="box">
   <h3 id="mTitle"></h3><div id="mBody"></div>
   <div class="row"><button class="ghost" id="mNo"></button><button class="big start" id="mYes"></button></div>
@@ -132,7 +140,7 @@ footer{padding:10px 14px;text-align:center;color:var(--muted);font-size:12px;bor
 const VERSION='__VERSION__';
 const T={
 ru:{refresh:'Обновить диски',quit:'Выключить',scanTitle:'Проверка поверхности',from:'С (ГБ)',to:'По (ГБ)',whole:'Весь диск',
-start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
+support:'Поддержать СБП',start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
 loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',noSmartHint:'Этот диск не отдаёт SMART (часто так у USB-корпусов). Проверка поверхности доступна.',
 v0:'Здоров',v1:'Внимание',v2:'Плохо',vn:'Нет данных',health:'Состояние',temp:'Температура',
 fw:'Прошивка',serial:'Серийный номер',iface:'Интерфейс',rot:'Скорость вращения',ssd:'SSD',rpm:'об/мин',
@@ -159,7 +167,7 @@ busy:'Сейчас выполняется другая операция.',bad_ra
 h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
 an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
 en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
-start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
+support:'Donate PayPal',start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
 loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',noSmartHint:'This disk does not provide SMART (common with USB enclosures). Surface scan is available.',
 v0:'Healthy',v1:'Caution',v2:'Bad',vn:'No data',health:'Health',temp:'Temperature',
 fw:'Firmware',serial:'Serial number',iface:'Interface',rot:'Rotation rate',ssd:'SSD',rpm:'rpm',
@@ -204,11 +212,17 @@ async function api(path,body){
   return j;
 }
 
+// Окно «Поддержать»: через 15 с после открытия страницы (русский: СБП, иначе PayPal); закрытие запоминается на время сессии браузера.
+let supportReady=false,supportClosed=false;
+try{supportClosed=sessionStorage.getItem('supportClosed')==='1'}catch(e){}
+function updateSupport(){$('supportImg').src=lang==='ru'?'/qr.png':'/qr_paypal.png';$('supportImg').alt=lang==='ru'?'QR СБП':'QR PayPal';$('support').classList.toggle('on',supportReady&&!supportClosed)}
+setTimeout(()=>{supportReady=true;updateSupport()},15000);
+$('supportX').onclick=()=>{supportClosed=true;try{sessionStorage.setItem('supportClosed','1')}catch(e){}updateSupport()};
 function applyLang(){
   document.documentElement.lang=lang;
   document.querySelectorAll('[data-i]').forEach(e=>e.textContent=t(e.dataset.i));
   $('lang').value=lang;
-  renderTabs();renderLeft();renderRight();
+  renderTabs();renderLeft();renderRight();updateSupport();
 }
 
 function verdictOf(d){return d.smart&&d.smart.verdict>=0?d.smart.verdict:-1}

@@ -126,6 +126,10 @@ static void handle(int fd) {
             respond(fd, 200, "text/html; charset=utf-8", (const char*)ASSET_INDEX_HTML, ASSET_INDEX_HTML_LEN);
         else if (path == "/logo.png")
             respond(fd, 200, "image/png", (const char*)ASSET_TITLE_PNG, ASSET_TITLE_PNG_LEN, true);
+        else if (path == "/qr_paypal.png")
+            respond(fd, 200, "image/png", (const char*)ASSET_QR_PAYPAL_PNG, ASSET_QR_PAYPAL_PNG_LEN, true);
+        else if (path == "/qr.png")
+            respond(fd, 200, "image/png", (const char*)ASSET_QR_PNG, ASSET_QR_PNG_LEN, true);
         else if (path == "/favicon.png" || path == "/favicon.ico")
             respond(fd, 200, "image/png", (const char*)ASSET_ICON_PNG, ASSET_ICON_PNG_LEN, true);
         else if (path == "/api/state") respond_json(fd, 200, engine_state_json());
