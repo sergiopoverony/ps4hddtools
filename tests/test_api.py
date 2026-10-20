@@ -45,7 +45,7 @@ def wait_idle(limit=60):
 # ---------- 1. SMART и диски
 p = start(cfg='{"realloc":3}')
 s = json.loads(get('/api/state'))
-check('state: версия 1.0.0.14', s['v'] == '1.0.0.14' and s['job'] == 'idle' and not s['loaded'])
+check('state: версия 1.0.0.15', s['v'] == '1.0.0.15' and s['job'] == 'idle' and not s['loaded'])
 check('в покое диски не читаются', json.loads(get('/api/disks'))['disks'] == [])
 check('POST без заголовка отклонён', post('/api/refresh', headers={'Content-Type': 'text/plain'})[0] == 403)
 check('refresh принят', post('/api/refresh')[0] == 200)
@@ -60,10 +60,10 @@ check('вердикт «внимание» из-за 3 переназначен�
 check('пороги прочитаны', any(a['id'] == 5 and a['t'] == 10 for a in sm['attrs']))
 check('статус исправен', sm['status'] == 0)
 check('rpm 5400', sm['rpm'] == 5400)
-check('index.html отдаётся и версия подставлена', b'1.0.0.14' in get('/') and b'__VERSION__' not in get('/'))
+check('index.html отдаётся и версия подставлена', b'1.0.0.15' in get('/') and b'__VERSION__' not in get('/'))
 check('logo/favicon PNG', get('/logo.png')[:4] == b'\x89PNG' and get('/favicon.ico')[:4] == b'\x89PNG')
 check('qr.png и qr_paypal.png отдаются', get('/qr.png')[:4] == b'\x89PNG' and get('/qr_paypal.png')[:4] == b'\x89PNG')
-check('log отдаётся', b'version 1.0.0.14' in get('/api/log'))
+check('log отдаётся', b'version 1.0.0.15' in get('/api/log'))
 
 # ---------- 2. неверные запросы
 check('estimate неизвестного диска', post('/api/scan/estimate', {'disk': '../../etc/passwd'})[0] == 400)
