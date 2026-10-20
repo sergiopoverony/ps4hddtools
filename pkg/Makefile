@@ -19,6 +19,9 @@ APPVER      := $(shell sed -n 's/.*APP_VERSION "\(.*\)".*/\1/p' ../src/version.h
 ASSETS      := assets/fonts/DejaVuSansMono.ttf assets/fonts/LICENSE-DejaVu.txt assets/images/title.png \
                assets/misc/lang_en.json assets/misc/lang_ru.json assets/misc/ps4hddtools.elf
 
+# Системные модули для приложения (без libc.prx приложение сразу вылетает). Берутся из набора OpenOrbis.
+LIBMODULES  := sce_module/libc.prx sce_module/libSceFios2.prx
+
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 PROJDIR     := src
 INTDIR      := build/obj
@@ -31,7 +34,7 @@ CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -c $(EXTRA
 CXXFLAGS    := $(CFLAGS) -isystem $(TOOLCHAIN)/include/c++/v1
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
-_unused     := $(shell mkdir -p $(INTDIR) sce_sys/about assets/misc)
+_unused     := $(shell mkdir -p $(INTDIR) sce_sys/about sce_module assets/misc)
 
 UNAME_S     := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
@@ -58,8 +61,14 @@ all: $(CONTENT_ID).pkg
 $(CONTENT_ID).pkg: pkg.gp4
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build $< .
 
-pkg.gp4: eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_sys/pic1.png $(ASSETS)
+pkg.gp4: eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_sys/pic1.png $(LIBMODULES) $(ASSETS)
 	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
+
+# Системные модули: ищем файл с нужным именем в наборе OpenOrbis (обычно он лежит в samples/*/sce_module).
+sce_module/%.prx:
+	@src="$$(find '$(TOOLCHAIN)' -name '$*.prx' 2>/dev/null | head -n 1)"; \
+	if [ -z "$$src" ]; then echo "Не найден $*.prx в $(TOOLCHAIN). Скопируйте его вручную в pkg/sce_module/"; exit 1; fi; \
+	echo "cp $$src $@"; cp "$$src" $@
 
 # Служба берётся из корня проекта.
 assets/misc/ps4hddtools.elf: ../release/ps4hddtools.elf
@@ -99,4 +108,4 @@ $(INTDIR)/%.o: $(PROJDIR)/%.cpp
 	$(CCX) $(CXXFLAGS) -o $@ $<
 
 clean:
-	rm -rf $(CONTENT_ID).pkg pkg.gp4 eboot.bin build sce_sys assets/misc/ps4hddtools.elf
+	rm -rf $(CONTENT_ID).pkg pkg.gp4 eboot.bin build sce_sys sce_module assets/misc/ps4hddtools.elf
