@@ -40,6 +40,7 @@ button.green:hover{background:#27905a}
 main{flex:1;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:12px;padding:12px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
 h2{margin:0 0 10px;font-size:17px;font-weight:600}
+#scanDisk{color:var(--accent);margin-left:10px}
 .muted{color:var(--muted)}
 .top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
 .health{min-width:130px;border-radius:8px;padding:8px 14px;text-align:center;color:#fff;font-weight:700;background:var(--panel2)}
@@ -136,7 +137,7 @@ header{flex-direction:column;align-items:stretch}
 <main>
   <section class="panel" id="left"></section>
   <section class="panel">
-    <h2 data-i="scanTitle"></h2>
+    <h2><span data-i="scanTitle"></span><span id="scanDisk"></span></h2>
     <div class="ctrl">
       <div class="range">
         <div><label data-i="from"></label><input id="rFrom" type="number" min="0" step="1" value="0"></div>
@@ -275,7 +276,7 @@ function renderTabs(){
     s.appendChild(el('span','',label));b.appendChild(s);
     b.appendChild(el('small','',(d.label?d.label+' · ':'')+d.id+' · '+fmtBytes(d.bytes)));
     b.title=(d.smart&&d.smart.model?d.smart.model:shortModel(d))+' · '+(d.label?d.label+' · ':'')+d.id+' · '+fmtBytes(d.bytes);
-    b.onclick=()=>{sel=d.id;renderTabs();renderLeft();renderRight()};
+    b.onclick=()=>{sel=d.id;renderTabs();renderLeft();if(!(st&&st.job!=='idle'))setDefaultRange();renderRight()};
     box.appendChild(b);
   });
 }
@@ -367,9 +368,11 @@ function renderRight(){
   $('btnStop').disabled=!(running||job==='bench');
   $('btnRefresh').disabled=busy;
   $('rFrom').disabled=$('rTo').disabled=$('btnFull').disabled=busy;
+  updScanDisk();
 }
 
-function setDefaultRange(){const d=cur();$('rFrom').value=0;$('rTo').value=d?Math.ceil(d.bytes/1e9):0}
+function updScanDisk(){const d=cur();$('scanDisk').textContent=d?'· '+shortModel(d)+' ('+d.id+')':''}
+function setDefaultRange(){const d=cur();updScanDisk();$('rFrom').value=0;$('rTo').value=d?Math.ceil(d.bytes/1e9):0}
 
 async function loadDisks(){
   const j=await api('/api/disks');disks=j.disks;loadedOnce=j.loaded;
