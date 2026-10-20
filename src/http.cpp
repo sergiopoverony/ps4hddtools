@@ -214,6 +214,12 @@ int http_run(int port) {
         return -2;
     }
     app_log("веб-интерфейс слушает порт %d", port);
+    {
+        std::string ip = local_ip();
+        app_log("адрес консоли: %s", ip.empty() ? "не определён" : ip.c_str());
+        if (!ip.empty()) notify("ps4hddtools %s: откройте в браузере http://%s:%d", APP_VERSION, ip.c_str(), port);
+        else notify("ps4hddtools %s: откройте в браузере http://<IP консоли>:%d", APP_VERSION, port);
+    }
 
     for (;;) {
         pollfd p;
