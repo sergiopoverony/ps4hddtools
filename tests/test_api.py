@@ -45,7 +45,7 @@ def wait_idle(limit=60):
 # ---------- 1. SMART и диски
 p = start(cfg='{"realloc":3}')
 s = json.loads(get('/api/state'))
-check('state: версия 1.0.0.8', s['v'] == '1.0.0.8' and s['job'] == 'idle' and not s['loaded'])
+check('state: версия 1.0.0.9', s['v'] == '1.0.0.9' and s['job'] == 'idle' and not s['loaded'])
 check('в покое диски не читаются', json.loads(get('/api/disks'))['disks'] == [])
 check('POST без заголовка отклонён', post('/api/refresh', headers={'Content-Type': 'text/plain'})[0] == 403)
 check('refresh принят', post('/api/refresh')[0] == 200)
@@ -60,9 +60,9 @@ check('вердикт «внимание» из-за 3 переназначен�
 check('пороги прочитаны', any(a['id'] == 5 and a['t'] == 10 for a in sm['attrs']))
 check('статус исправен', sm['status'] == 0)
 check('rpm 5400', sm['rpm'] == 5400)
-check('index.html отдаётся и версия подставлена', b'1.0.0.8' in get('/') and b'__VERSION__' not in get('/'))
+check('index.html отдаётся и версия подставлена', b'1.0.0.9' in get('/') and b'__VERSION__' not in get('/'))
 check('logo/favicon PNG', get('/logo.png')[:4] == b'\x89PNG' and get('/favicon.ico')[:4] == b'\x89PNG')
-check('log отдаётся', b'version 1.0.0.8' in get('/api/log'))
+check('log отдаётся', b'version 1.0.0.9' in get('/api/log'))
 
 # ---------- 2. неверные запросы
 check('estimate неизвестного диска', post('/api/scan/estimate', {'disk': '../../etc/passwd'})[0] == 400)
@@ -149,6 +149,20 @@ check('POST /quit', post('/quit')[0] == 200)
 t0 = time.time()
 while p2.poll() is None and time.time() - t0 < 10: time.sleep(0.2)
 check('/quit завершает процесс с кодом 0', p2.poll() == 0, p2.poll())
+
+# ---------- 6б. два диска: один с SMART, второй (USB-корпус) без SMART
+p = start()
+open(ROOT + '/dev/da1', 'wb').truncate(8 * 1048576)
+open(ROOT + '/dev/pass2', 'wb').close(); open(ROOT + '/dev/pass2.weak', 'wb').write(b'1')
+open(ROOT + '/dev/pass0', 'wb').close()   # без файлов-образцов: пропускается
+post('/api/refresh'); wait_idle()
+dk = json.loads(get('/api/disks'))['disks']
+check('два диска найдены', [x['id'] for x in dk] == ['da0', 'da1'], [x['id'] for x in dk])
+check('da0 сопоставлен с SMART по ёмкости', dk[0]['smart'] and dk[0]['smart']['model'].startswith('ST2000LM007'))
+check('da1 без SMART, но с названием корпуса', dk[1]['smart'] and dk[1]['smart']['bridge'] == 'ANKEJE USB3.0' and not dk[1]['smart']['attrs'] and dk[1]['smart']['verdict'] == -1, dk[1]['smart'])
+c, _ = post('/api/scan/start', {'disk': 'da1'}); check('проверка da1 доступна', c == 200)
+s = wait_idle(); check('da1 проверен без ошибок', s['scan']['disk'] == 'da1' and s['scan']['msg'] == 'done_ok', s['scan'])
+p.terminate(); p.wait()
 
 # ---------- 7. вердикт «плохо»
 p = start(cfg='{"failing":1}')

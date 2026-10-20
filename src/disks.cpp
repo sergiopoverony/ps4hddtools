@@ -105,7 +105,9 @@ std::vector<DiskInfo> disks_discover() {
     for (const std::string& n : list_dev(is_pass)) {
         Rep r;
         r.pass = std::string(DEV_DIR) + "/" + n;
-        if (smart_query(r.pass.c_str(), r.r)) reps.push_back(r);
+        bool ok = smart_query(r.pass.c_str(), r.r);
+        // Устройство без SMART (например, USB-корпус без SAT) тоже запоминаем: хотя бы название моста.
+        if (ok || (r.r.error != "sony" && !r.r.bridge.empty())) reps.push_back(r);
     }
     // Сопоставление по ёмкости: IDENTIFY (сектора по 512 Б) против размера da.
     for (DiskInfo& d : disks)

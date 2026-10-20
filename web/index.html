@@ -133,7 +133,7 @@ const VERSION='__VERSION__';
 const T={
 ru:{refresh:'Обновить диски',quit:'Выключить',scanTitle:'Проверка поверхности',from:'С (ГБ)',to:'По (ГБ)',whole:'Весь диск',
 start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
-loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',
+loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',noSmartHint:'Этот диск не отдаёт SMART (часто так у USB-корпусов). Проверка поверхности доступна.',
 v0:'Здоров',v1:'Внимание',v2:'Плохо',vn:'Нет данных',health:'Состояние',temp:'Температура',
 fw:'Прошивка',serial:'Серийный номер',iface:'Интерфейс',rot:'Скорость вращения',ssd:'SSD',rpm:'об/мин',
 hr:'Всего прочитано',hw:'Всего записано',cycles:'Включений',poh:'Часов работы',cap:'Ёмкость',path:'Устройство',
@@ -160,7 +160,7 @@ h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
 an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
 en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
 start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
-loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',
+loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',noSmartHint:'This disk does not provide SMART (common with USB enclosures). Surface scan is available.',
 v0:'Healthy',v1:'Caution',v2:'Bad',vn:'No data',health:'Health',temp:'Temperature',
 fw:'Firmware',serial:'Serial number',iface:'Interface',rot:'Rotation rate',ssd:'SSD',rpm:'rpm',
 hr:'Total host reads',hw:'Total host writes',cycles:'Power cycles',poh:'Power-on hours',cap:'Capacity',path:'Device',
@@ -212,7 +212,8 @@ function applyLang(){
 }
 
 function verdictOf(d){return d.smart&&d.smart.verdict>=0?d.smart.verdict:-1}
-function shortModel(d){return d.smart&&d.smart.model?d.smart.model.split('-')[0]:d.id.toUpperCase()}
+const hasData=d=>d.smart&&(d.smart.model||d.smart.attrs.length);
+function shortModel(d){return d.smart&&d.smart.model?d.smart.model.split('-')[0]:d.smart&&d.smart.bridge?d.smart.bridge:d.id.toUpperCase()}
 function renderTabs(){
   const box=$('tabs');box.textContent='';
   if(!loadedOnce||(!disks.length&&busyLocal)){box.appendChild(el('span','muted',t('loading')));return}
@@ -222,7 +223,7 @@ function renderTabs(){
     b.appendChild(el('b','',shortModel(d)));
     const v=verdictOf(d);const s=el('span','st');
     const dot=el('i','dot'+(v>=0?' s'+v:''));s.appendChild(dot);
-    let label=!d.smart?t('noSmart'):v>=0?t('v'+v):t('vn');
+    let label=!d.smart||(!d.smart.attrs.length&&v<0)?t('noSmart'):v>=0?t('v'+v):t('vn');
     if(st&&st.scan&&st.scan.disk===d.id&&(st.job==='scan')){label=t('running').replace('…','')+' '+pct(st.scan).toFixed(0)+'%'}
     s.appendChild(el('span','',label));b.appendChild(s);
     b.appendChild(el('small','',(d.label?d.label+' · ':'')+d.id+' · '+fmtBytes(d.bytes)));
@@ -238,8 +239,8 @@ function renderLeft(){
   const d=cur();
   if(!d){box.appendChild(el('h2','',loadedOnce?t('noDisks'):t('loading')));return}
   const s=d.smart;
-  box.appendChild(el('h2','',(s&&s.model?s.model:d.id)+' : '+fmtGB(d.bytes)));
-  if(!s){box.appendChild(el('p','muted',t('noSmart')));box.appendChild(kv(t('path'),d.path));return}
+  box.appendChild(el('h2','',(s&&s.model?s.model:s&&s.bridge?s.bridge:d.id)+' : '+fmtGB(d.bytes)));
+  if(!s||(!s.attrs.length&&s.verdict<0)){box.appendChild(el('p','muted',t('noSmartHint')));box.appendChild(kv(t('path'),d.path));if(s&&s.bridge)box.appendChild(kv(t('iface'),s.bridge));if(s&&s.model){box.appendChild(kv(t('fw'),s.fw||'—'));box.appendChild(kv(t('serial'),s.serial||'—'))}return}
   const top=el('div','top');
   const left=el('div');
   const h=el('div','health'+(s.verdict>=0?' v'+s.verdict:''));

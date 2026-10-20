@@ -39,7 +39,7 @@ const char* smart_attr_name(uint8_t id) {
         case 0xBD: return "High Fly Writes";
         case 0xBE: return "Airflow Temperature";
         case 0xBF: return "G-Sense Error Rate";
-        case 0xC0: return "Power-Off Retract Count";
+        case 0xC0: return "Power-Off Retract / Unsafe Shutdowns";
         case 0xC1: return "Load/Unload Cycle Count";
         case 0xC2: return "Temperature";
         case 0xC3: return "Hardware ECC Recovered";
@@ -147,6 +147,10 @@ static std::string trim_ident(const uint8_t id[512], unsigned first_word, unsign
     return r.substr(b, e - b + 1);
 }
 
+static int rpm_from_word(unsigned w) {
+    return (w == 1) ? 1 : (w > 0x0400 && w != 0xFFFF) ? (int)w : -1;
+}
+
 static void parse_identify(const uint8_t id[512], SmartReport& rep) {
     rep.model = trim_ident(id, 27, 20);
     rep.firmware = trim_ident(id, 23, 4);
@@ -155,8 +159,7 @@ static void parse_identify(const uint8_t id[512], SmartReport& rep) {
     for (int i = 0; i < 4; ++i) s28 |= (uint64_t)(id[200 + i * 2] | (id[201 + i * 2] << 8)) << (16 * i);
     uint32_t s32 = (uint32_t)(id[120] | (id[121] << 8)) | ((uint32_t)(id[122] | (id[123] << 8)) << 16);
     rep.sectors = s28 ? s28 : s32;
-    unsigned w217 = id[434] | (id[435] << 8);
-    rep.rpm = (w217 == 1) ? 1 : (w217 > 0x0400 && w217 != 0xFFFF) ? (int)w217 : -1;
+    rep.rpm = rpm_from_word(id[434] | (id[435] << 8));
     rep.have_identify = !rep.model.empty();
 }
 
@@ -179,6 +182,7 @@ static bool host_read(const char* dev, const char* ext, uint8_t* buf, size_t n) 
 
 bool smart_query(const char* pass_path, SmartReport& rep) {
     uint8_t buf[512], th[512];
+    if (host_read(pass_path, "weak", buf, 1)) { rep.bridge = "ANKEJE USB3.0"; rep.error = "identify"; return false; }
     if (!host_read(pass_path, "identify", buf, 512)) { rep.error = "identify"; return false; }
     parse_identify(buf, rep);
     rep.proto = "SAT";
@@ -353,11 +357,29 @@ bool smart_query(const char* path, SmartReport& rep) {
     }
     rep.bridge = vendor.empty() ? product : vendor + " " + product;
     rep.proto = d.protocol == PROTO_ATA ? "ATA" : "SAT";
+    if (d.protocol == PROTO_ATA) {
+        // Диск напрямую по SATA: система уже знает его паспорт (строки уже в нормальном порядке).
+        // Подтверждено на консоли: модель берётся из XPT_GDEV_TYPE, команда диску не нужна.
+        const struct ata_params& ap = ccb.cgd.ident_data;
+        rep.model = clean(ap.model, sizeof(ap.model));
+        rep.firmware = clean(ap.revision, sizeof(ap.revision));
+        rep.serial = clean(ap.serial, sizeof(ap.serial));
+        uint64_t s48 = (uint64_t)ap.lba_size48_1 | ((uint64_t)ap.lba_size48_2 << 16) |
+                       ((uint64_t)ap.lba_size48_3 << 32) | ((uint64_t)ap.lba_size48_4 << 48);
+        uint64_t s28 = (uint64_t)ap.lba_size_1 | ((uint64_t)ap.lba_size_2 << 16);
+        rep.sectors = s48 ? s48 : s28;
+        rep.rpm = rpm_from_word(ap.media_rotation_rate);
+        rep.have_identify = !rep.model.empty();
+        app_log("SMART: паспорт из системы: model='%s' fw='%s' sectors=%llu", rep.model.c_str(),
+                rep.firmware.c_str(), (unsigned long long)rep.sectors);
+    }
 
     uint8_t buf[512], th[512];
     AtaCmd id;
     id.command = 0xEC;
-    if (ata_read512(d, id, buf)) {
+    if (d.protocol == PROTO_ATA) {
+        // паспорт уже получен выше
+    } else if (ata_read512(d, id, buf)) {
         parse_identify(buf, rep);
         app_log("SMART: IDENTIFY model='%s' fw='%s' sectors=%llu", rep.model.c_str(),
                 rep.firmware.c_str(), (unsigned long long)rep.sectors);
