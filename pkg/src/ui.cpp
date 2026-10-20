@@ -1,7 +1,5 @@
 #include "ui.h"
 #include "service.h"
-#include "diag.h"
-#include "ghsdk.h"
 #include "scene.h"
 #include "image.h"
 #include "i18n.h"
@@ -326,10 +324,35 @@ static bool        g_disksOk = false;
 static uint64_t    g_nextDisks = 0;
 static uint64_t    g_nextSig = 0;
 static std::string g_pendingSig;
-static bool        g_confirmQuit = false;
 
 static std::string version_str() { return APP_VERSION; }
 static std::vector<std::string> g_diagLines;
+
+// ---------------------------------------------------------------- экраны: список дисков / SMART / сканирование
+
+enum Screen { SCR_LIST, SCR_DISK, SCR_SCAN };
+static Screen g_screen = SCR_LIST;
+static std::string g_selId;       // id выбранного диска (не индекс - список может пересортироваться)
+
+enum Confirm { CONF_NONE, CONF_QUIT, CONF_SCAN_START, CONF_SCAN_STOP };
+static Confirm g_confirm = CONF_NONE;
+
+static StateView   g_state;
+static uint64_t    g_nextState = 0;
+static bool        g_scanBusy = false;   // идёт замер скорости (между estimate и подтверждением)
+static std::string g_scanMsg;            // временное сообщение экрана сканирования (замер, ошибка)
+static EstView      g_confirmEst;        // результат замера, показанный в окне подтверждения старта
+
+static int sel_idx()
+{
+    for (size_t i = 0; i < g_disks.disks.size(); i++) if (g_disks.disks[i].id == g_selId) return (int)i;
+    return -1;
+}
+static const DiskView* sel_disk()
+{
+    int i = sel_idx();
+    return i < 0 ? NULL : &g_disks.disks[i];
+}
 
 // Запуск службы. Один коннект на попытку (без отдельной "пробной" проверки порта перед отправкой -
 // два подключения к BinLoader подряд ловили гонку: первое (проверочное) успевало закрыться
@@ -399,6 +422,7 @@ static void svc_step(uint64_t now)
                 g_pollFails = 0;
                 if (!dv.loaded) service_refresh_disks();
                 g_disks = dv; g_disksOk = dv.loaded;
+                if (sel_idx() < 0 && !g_disks.disks.empty()) g_selId = g_disks.disks[0].id;
                 g_redraw = 2;
             } else if (++g_pollFails >= 3) {
                 logf_("svc: service stopped answering, checking again");
@@ -413,6 +437,25 @@ static void svc_step(uint64_t now)
                 if (sig == g_disks.sig) g_pendingSig.clear();
                 else if (sig != g_pendingSig) g_pendingSig = sig;
                 else { g_pendingSig.clear(); service_refresh_disks(); g_nextDisks = now + 1500000ULL; }
+            }
+        }
+        // Состояние задания/сканирования (для списка, экрана диска и экрана сканирования).
+        if (now >= g_nextState) {
+            g_nextState = now + 1200000ULL;
+            StateView sv;
+            if (service_state(sv)) {
+                g_state = sv;
+                if (g_scanBusy && sv.job == "idle") {
+                    g_scanBusy = false;
+                    const DiskView* d = sel_disk();
+                    if (d && sv.est.present && sv.est.ok && sv.est.disk == d->id) {
+                        g_confirmEst = sv.est;
+                        g_confirm = CONF_SCAN_START;
+                    } else {
+                        g_scanMsg = tr("estFail", "Could not measure the disk speed.");
+                    }
+                }
+                g_redraw = 2;
             }
         }
     }
@@ -438,6 +481,45 @@ static std::string short_model(const DiskView& d)
     return dash == std::string::npos ? m : m.substr(0, dash);
 }
 
+static std::string fmt_time(double sec)
+{
+    if (sec < 0) return "—";
+    long s = (long)(sec + 0.5);
+    long h = s / 3600, m = (s % 3600) / 60, ss = s % 60;
+    char b[32];
+    if (h) snprintf(b, sizeof(b), "%ldч %ldмин", h, m);
+    else if (m) snprintf(b, sizeof(b), "%ldмин %ldс", m, ss);
+    else snprintf(b, sizeof(b), "%ldс", ss);
+    return b;
+}
+
+static std::string fmt_num(uint64_t n)
+{
+    char b[32]; snprintf(b, sizeof(b), "%llu", (unsigned long long)n);
+    std::string s = b, out;
+    int c = 0;
+    for (int i = (int)s.size() - 1; i >= 0; i--) {
+        out = s[i] + out;
+        if (++c % 3 == 0 && i > 0) out = " " + out;
+    }
+    return out;
+}
+
+// Цвета карты сканирования, как на веб-странице (--b1..--b7). i==0 - ещё не проверено.
+static Color hist_color(int i)
+{
+    switch (i) {
+    case 1: { Color c = { 242, 242, 242 }; return c; }
+    case 2: { Color c = { 154, 154, 154 }; return c; }
+    case 3: { Color c = {  94,  94,  94 }; return c; }
+    case 4: { Color c = {  25, 230,  25 }; return c; }
+    case 5: { Color c = { 255, 140,   0 }; return c; }
+    case 6: { Color c = { 255,  26,  26 }; return c; }
+    case 7: { Color c = {  26,  26, 255 }; return c; }
+    default:{ Color c = {  42,  46,  54 }; return c; }
+    }
+}
+
 static void fill(int x, int y, int w, int h, Color c) { g_scene->FillRect(x, y, w, h, c); }
 
 static void draw_panel(int w, int h)
@@ -445,6 +527,217 @@ static void draw_panel(int w, int h)
     int x = (FRAME_WIDTH - w) / 2, y = (FRAME_HEIGHT - h) / 2;
     fill(x - 3, y - 3, w + 6, h + 6, C_EDGE);
     fill(x, y, w, h, C_PANEL);
+}
+
+static void draw_wrapped(const std::string& s, int x, int yTop, int maxc, int maxLines, Color fg, Color bg)
+{
+    size_t pos = 0; int line = 0;
+    while (pos < s.size() && line < maxLines) {
+        size_t end = pos + (size_t)maxc; if (end >= s.size()) end = s.size();
+        else { size_t sp = s.rfind(' ', end); if (sp != std::string::npos && sp > pos) end = sp; }
+        draw_text(s.substr(pos, end - pos), x, yTop + line * 34, fg, bg);
+        pos = end; while (pos < s.size() && s[pos] == ' ') pos++;
+        line++;
+    }
+}
+
+// ---------------------------------------------------------------- экран: список дисков
+
+static void draw_screen_list(int y0)
+{
+    if (!g_disksOk) { draw_text(tr("loading_disks", "Reading disks…"), MARGIN_X, y0 + 30, C_DIM, C_BG); return; }
+    if (g_disks.disks.empty()) { draw_text(tr("no_disks", "No disks found"), MARGIN_X, y0 + 30, C_DIM, C_BG); return; }
+
+    for (size_t i = 0; i < g_disks.disks.size(); i++) {
+        const DiskView& d = g_disks.disks[i];
+        int y = y0 + (int)i * ROW_H;
+        if (y + ROW_H > 960) break;
+        bool isSel = (d.id == g_selId);
+        Color bg = (i & 1) ? C_ROW2 : C_PANEL;
+        if (isSel) {
+            fill(MARGIN_X - 10, y, FRAME_WIDTH - 2 * (MARGIN_X - 10), ROW_H - 6, C_EDGE);
+            fill(MARGIN_X - 7, y + 3, FRAME_WIDTH - 2 * (MARGIN_X - 10) - 6, ROW_H - 12, bg);
+        } else {
+            fill(MARGIN_X - 10, y, FRAME_WIDTH - 2 * (MARGIN_X - 10), ROW_H - 6, bg);
+        }
+        int base = y + 38;
+        draw_text(short_model(d), MARGIN_X, base, C_TEXT, bg);
+        std::string sub = (d.label.empty() ? "" : d.label + " · ") + d.id + " · " + fmt_size(d.bytes);
+        draw_text(sub, MARGIN_X + 520, base, C_DIM, bg);
+
+        std::string vt; Color vc = C_DIM;
+        if (g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d.id) {
+            uint64_t tot = g_state.scan.to - g_state.scan.from;
+            double pct = tot > 0 ? 100.0 * (double)g_state.scan.done / (double)tot : 0;
+            char b[32]; snprintf(b, sizeof(b), "%s %.0f%%", g_state.scan.state == "paused" ? "||" : ">", pct);
+            vt = b; vc = C_AMBER;
+        } else if (!d.hasSmart || d.verdict < 0) vt = tr("vn", "No SMART");
+        else if (d.verdict == 0) { vt = tr("v0", "Healthy"); vc = C_GREEN; }
+        else if (d.verdict == 1) { vt = tr("v1", "Caution"); vc = C_AMBER; }
+        else { vt = tr("v2", "Bad"); vc = C_RED; }
+        if (d.hasSmart && d.temp > 0) { char t[16]; snprintf(t, sizeof(t), "  %d°C", d.temp); vt += t; }
+        draw_text(vt, MARGIN_X + 1100, base, vc, bg);
+    }
+}
+
+// ---------------------------------------------------------------- экран: SMART диска
+
+static std::string reason_text(const DiskView& d, const SmartReasonView& r)
+{
+    std::string name;
+    for (size_t k = 0; k < d.attrs.size(); k++) if (d.attrs[k].id == r.id) { name = d.attrs[k].name; break; }
+    char v[32]; snprintf(v, sizeof(v), "%lld", (long long)r.value);
+    if (r.code == "status_fail") return tr("r_status_fail", "The drive reports imminent failure (SMART RETURN STATUS). Back up your data now.");
+    if (r.code == "temp") return tr("r_temp_prefix", "High temperature:") + std::string(" ") + v + " °C";
+    if (r.code == "thr") return name + " " + tr("r_thr_suffix", "dropped to or below threshold") + " (" + v + ")";
+    return name + ": " + v;
+}
+
+static void draw_screen_disk(const DiskView& d, int y0)
+{
+    std::string header = (!d.model.empty() ? d.model : !d.bridge.empty() ? d.bridge : d.id) + "   ·   " + fmt_size(d.bytes);
+    draw_text(header, MARGIN_X, y0 + 34, C_TEXT, C_BG);
+
+    if (!d.hasSmart) {
+        draw_wrapped(tr("noSmartHint", "This disk does not provide SMART (common with USB enclosures). Surface scan is available."),
+                     MARGIN_X, y0 + 90, 110, 2, C_DIM, C_BG);
+        draw_text(tr("path", "Device") + ": " + d.path, MARGIN_X, y0 + 170, C_DIM, C_BG);
+        return;
+    }
+
+    int y1 = y0 + 90;
+    std::string vt; Color vc = C_DIM;
+    if (d.verdict == 0) { vt = tr("v0", "Healthy"); vc = C_GREEN; }
+    else if (d.verdict == 1) { vt = tr("v1", "Caution"); vc = C_AMBER; }
+    else if (d.verdict == 2) { vt = tr("v2", "Bad"); vc = C_RED; }
+    else vt = tr("vn", "No SMART");
+    draw_text(vt, MARGIN_X, y1, vc, C_BG);
+    if (d.temp > 0) { char t[32]; snprintf(t, sizeof(t), "%d °C", d.temp); draw_text(t, MARGIN_X + 280, y1, C_DIM, C_BG); }
+
+    struct KV { std::string k, v; };
+    std::vector<KV> left, right;
+    left.push_back(KV{ tr("fw", "Firmware"), d.firmware.empty() ? "—" : d.firmware });
+    left.push_back(KV{ tr("serial", "Serial number"), d.serial.empty() ? "—" : d.serial });
+    left.push_back(KV{ tr("iface", "Interface"), d.proto + (d.bridge.empty() ? "" : (" · " + d.bridge)) });
+    left.push_back(KV{ tr("rot", "Rotation rate"), d.rpm == 1 ? tr("ssd", "SSD") : d.rpm > 1 ? (fmt_num((uint64_t)d.rpm) + " " + tr("rpm", "rpm")) : "—" });
+    right.push_back(KV{ tr("hr", "Total host reads"), d.hostRead >= 0 ? fmt_size((uint64_t)d.hostRead) : "—" });
+    right.push_back(KV{ tr("hw", "Total host writes"), d.hostWrite >= 0 ? fmt_size((uint64_t)d.hostWrite) : "—" });
+    right.push_back(KV{ tr("cycles", "Power cycles"), d.cycles >= 0 ? fmt_num((uint64_t)d.cycles) : "—" });
+    right.push_back(KV{ tr("poh", "Power-on hours"), d.poh >= 0 ? fmt_num((uint64_t)d.poh) : "—" });
+
+    int gy = y1 + 50;
+    for (size_t i = 0; i < left.size(); i++) {
+        draw_text(left[i].k + ":", MARGIN_X, gy + (int)i * 38, C_DIM, C_BG);
+        draw_text(left[i].v, MARGIN_X + 340, gy + (int)i * 38, C_TEXT, C_BG);
+    }
+    for (size_t i = 0; i < right.size(); i++) {
+        draw_text(right[i].k + ":", MARGIN_X + 900, gy + (int)i * 38, C_DIM, C_BG);
+        draw_text(right[i].v, MARGIN_X + 1260, gy + (int)i * 38, C_TEXT, C_BG);
+    }
+
+    int y2 = gy + 4 * 38 + 24;
+    if (d.reasons.empty() && d.verdict == 0) {
+        draw_text(tr("ok", "No critical indicators found."), MARGIN_X, y2, C_GREEN, C_BG);
+        y2 += 36;
+    } else {
+        size_t shown = 0;
+        for (size_t i = 0; i < d.reasons.size() && shown < 3; i++, shown++) {
+            Color rc = d.reasons[i].sev == 2 ? C_RED : C_AMBER;
+            draw_text(fit(reason_text(d, d.reasons[i]), 150), MARGIN_X, y2, rc, C_BG);
+            y2 += 32;
+        }
+    }
+
+    y2 += 16;
+    draw_text(tr("attrs", "SMART attributes"), MARGIN_X, y2, C_TEXT, C_BG);
+    y2 += 34;
+    put_left(0, tr("id", "ID"), y2, C_DIM, C_BG);
+    put_left(6, tr("name", "Name"), y2, C_DIM, C_BG);
+    put_right(60, 7, tr("cur", "Current"), y2, C_DIM, C_BG);
+    put_right(68, 7, tr("worst", "Worst"), y2, C_DIM, C_BG);
+    put_right(76, 7, tr("thr", "Thresh"), y2, C_DIM, C_BG);
+    put_right(96, 14, tr("raw", "Raw"), y2, C_DIM, C_BG);
+    y2 += 30;
+    for (size_t i = 0; i < d.attrs.size(); i++) {
+        if (y2 > 1000) break;
+        const SmartAttrView& a = d.attrs[i];
+        Color rc = a.sev == 2 ? C_RED : a.sev == 1 ? C_AMBER : C_TEXT;
+        char idhex[8]; snprintf(idhex, sizeof(idhex), "%02X", (unsigned)a.id);
+        put_left(0, idhex, y2, rc, C_BG);
+        put_left(6, fit(a.name, 52), y2, C_TEXT, C_BG);
+        put_right(60, 7, fmt_num((uint64_t)a.cur), y2, C_TEXT, C_BG);
+        put_right(68, 7, fmt_num((uint64_t)a.worst), y2, C_TEXT, C_BG);
+        put_right(76, 7, fmt_num((uint64_t)a.thresh), y2, C_TEXT, C_BG);
+        put_right(96, 14, a.raw, y2, C_DIMMER, C_BG);
+        y2 += 28;
+    }
+}
+
+// ---------------------------------------------------------------- экран: проверка поверхности
+
+static void draw_screen_scan(const DiskView& d, int y0)
+{
+    bool mine = g_state.scan.present && g_state.scan.disk == d.id;
+    const ScanView& sc = g_state.scan;
+    const std::string& job = g_state.job;
+
+    std::string header = tr("scanTitle", "Surface scan") + "   ·   " + short_model(d) + " (" + d.id + ")";
+    draw_text(header, MARGIN_X, y0 + 30, C_TEXT, C_BG);
+
+    std::string msg;
+    if (g_scanBusy) msg = tr("bench", "Measuring read speed…");
+    else if (mine && job == "scan") msg = sc.state == "paused" ? tr("paused", "Paused") : sc.state == "stopping" ? tr("stopping", "Stopping…") : tr("running", "Scanning the surface…");
+    else if (mine && !sc.msg.empty() && sc.state != "running") msg = tr(("m_" + sc.msg).c_str(), sc.msg.c_str());
+    else if (!g_scanMsg.empty()) msg = g_scanMsg;
+    else msg = tr("idle", "Ready. The scan only reads data and never writes.");
+    draw_text(msg, MARGIN_X, y0 + 76, C_DIM, C_BG);
+
+    double pct = 0;
+    if (mine) { uint64_t tot = sc.to - sc.from; pct = tot > 0 ? 100.0 * (double)sc.done / (double)tot : 0; }
+    int barY = y0 + 106, barW = FRAME_WIDTH - 2 * MARGIN_X, barH = 14;
+    fill(MARGIN_X, barY, barW, barH, Color{ 30, 33, 40 });
+    fill(MARGIN_X, barY, (int)((double)barW * pct / 100.0), barH, Color{ 91, 157, 255 });
+
+    const int cols = 25, rows = 20, gap = 3, mapW = 1260, cellH = 26;
+    int cellW = (mapW - (cols - 1) * gap) / cols;
+    int mapY = barY + 36;
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            int idx = r * cols + c;
+            int v = (mine && idx < (int)sc.map.size()) ? (sc.map[(size_t)idx] - '0') : 0;
+            fill(MARGIN_X + c * (cellW + gap), mapY + r * (cellH + gap), cellW, cellH, hist_color(v));
+        }
+    }
+    int mapH = rows * (cellH + gap) - gap;
+
+    int legX = MARGIN_X + mapW + 30, legW = FRAME_WIDTH - MARGIN_X - legX;
+    int legRowH = mapH / 7;
+    for (int i = 1; i <= 7; i++) {
+        int ly = mapY + (i - 1) * legRowH;
+        fill(legX, ly, legW, legRowH - 6, C_PANEL);
+        fill(legX + 10, ly + (legRowH - 6) / 2 - 10, 20, 20, hist_color(i));
+        char key[4]; snprintf(key, sizeof(key), "h%d", i);
+        draw_text(tr(key, ""), legX + 44, ly + (legRowH - 6) / 2 + 8, C_TEXT, C_PANEL);
+        std::string cs = fmt_num(mine ? sc.hist[i] : 0);
+        draw_text(cs, legX + legW - 24 - (int)cs.size() * g_cellW, ly + (legRowH - 6) / 2 + 8, C_DIM, C_PANEL);
+    }
+
+    int statY = mapY + mapH + 30;
+    struct St { std::string k, v; };
+    std::vector<St> stats;
+    { char b[32]; snprintf(b, sizeof(b), "%.1f %%", pct); stats.push_back(St{ tr("prog", "Progress"), b }); }
+    stats.push_back(St{ tr("speed", "Speed"), (mine && sc.speed > 0) ? (fmt_num((uint64_t)(sc.speed / 1e6)) + " MB/s") : "—" });
+    stats.push_back(St{ tr("elapsed", "Elapsed"), mine ? fmt_time(sc.elapsed) : "—" });
+    stats.push_back(St{ tr("left", "Remaining"), (mine && job == "scan" && sc.eta >= 0) ? fmt_time((double)sc.eta) : "—" });
+    stats.push_back(St{ tr("pos", "Position"), mine ? fmt_size(sc.from + sc.done) : "—" });
+    stats.push_back(St{ tr("bad", "Bad sectors"), mine ? (fmt_num(sc.bad) + (sc.approx ? " *" : "")) : "—" });
+    int sw = (FRAME_WIDTH - 2 * MARGIN_X) / 3;
+    for (size_t i = 0; i < stats.size(); i++) {
+        int cx = MARGIN_X + (int)(i % 3) * sw, cy = statY + (int)(i / 3) * 70;
+        fill(cx, cy, sw - 10, 60, C_PANEL);
+        draw_text(stats[i].k, cx + 14, cy + 24, C_DIM, C_PANEL);
+        draw_text(stats[i].v, cx + 14, cy + 50, C_TEXT, C_PANEL);
+    }
 }
 
 static void draw_all(uint64_t now)
@@ -463,17 +756,14 @@ static void draw_all(uint64_t now)
     case S_FAILED:  st = tr("svc_failed", "Could not start the service"); sc = C_RED; break;
     case S_STOPPED: st = tr("svc_stopped", "Service is shut down"); sc = C_AMBER; break;
     }
-    {
-        const unsigned char* p = (const unsigned char*)st.c_str(); int n = 0;
-        while (*p) { decode_utf8(p); n++; }
-        draw_text(st, FRAME_WIDTH - MARGIN_X - n * g_cellW, BANNER_TOP + 30, sc, C_BG);
-    }
+    draw_text(st, FRAME_WIDTH - MARGIN_X - count_cp(st) * g_cellW, BANNER_TOP + 30, sc, C_BG);
     if (g_svc == S_READY) {
         std::string v = "v" + g_svcVersion;
         draw_text(v, FRAME_WIDTH - MARGIN_X - (int)v.size() * g_cellW, BANNER_TOP + 60, C_DIMMER, C_BG);
     }
 
     int y0 = BANNER_TOP + BANNER_H + 30;
+    std::string hint;
 
     if (g_svc == S_FAILED) {
         draw_text(g_svcErr, MARGIN_X, y0 + 30, C_RED, C_BG);
@@ -481,60 +771,62 @@ static void draw_all(uint64_t now)
     } else if (g_svc == S_STOPPED) {
         draw_text(tr("svc_hint_stopped", "Cross - start the service again"), MARGIN_X, y0 + 30, C_DIM, C_BG);
     } else if (g_svc == S_READY) {
-        if (!g_disksOk) {
-            draw_text(tr("loading_disks", "Reading disks…"), MARGIN_X, y0 + 30, C_DIM, C_BG);
-        } else if (g_disks.disks.empty()) {
-            draw_text(tr("no_disks", "No disks found"), MARGIN_X, y0 + 30, C_DIM, C_BG);
-        } else {
-            for (size_t i = 0; i < g_disks.disks.size(); i++) {
-                const DiskView& d = g_disks.disks[i];
-                int y = y0 + (int)i * ROW_H;
-                if (y + ROW_H > 960) break;
-                fill(MARGIN_X - 10, y, FRAME_WIDTH - 2 * (MARGIN_X - 10), ROW_H - 6, (i & 1) ? C_ROW2 : C_PANEL);
-                int base = y + 38;
-                draw_text(short_model(d), MARGIN_X, base, C_TEXT, (i & 1) ? C_ROW2 : C_PANEL);
-                std::string sub = (d.label.empty() ? "" : d.label + " · ") + d.id + " · " + fmt_size(d.bytes);
-                draw_text(sub, MARGIN_X + 520, base, C_DIM, (i & 1) ? C_ROW2 : C_PANEL);
-                std::string vt; Color vc = C_DIM;
-                if (!d.hasSmart || d.verdict < 0) vt = tr("vn", "No SMART");
-                else if (d.verdict == 0) { vt = tr("v0", "Healthy"); vc = C_GREEN; }
-                else if (d.verdict == 1) { vt = tr("v1", "Caution"); vc = C_AMBER; }
-                else { vt = tr("v2", "Bad"); vc = C_RED; }
-                if (d.hasSmart && d.temp > 0) { char t[16]; snprintf(t, sizeof(t), "  %d°C", d.temp); vt += t; }
-                draw_text(vt, MARGIN_X + 1100, base, vc, (i & 1) ? C_ROW2 : C_PANEL);
+        const DiskView* d = sel_disk();
+        if (g_screen == SCR_DISK && d) {
+            draw_screen_disk(*d, y0);
+            hint = "{circle} " + tr("hint_back", "back") + "     {cross} " + tr("hint_scan", "surface scan");
+        } else if (g_screen == SCR_SCAN && d) {
+            draw_screen_scan(*d, y0);
+            bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
+            if (mineRunning) {
+                std::string pr = (g_state.scan.state == "paused") ? tr("hint_resume", "resume") : tr("hint_pause", "pause");
+                hint = "{cross} " + pr + "     {triangle} " + tr("hint_stop", "stop") + "     {circle} " + tr("hint_back", "back");
+            } else {
+                hint = "{cross} " + tr("hint_start", "start scan") + "     {circle} " + tr("hint_back", "back");
             }
+        } else {
+            g_screen = SCR_LIST;
+            draw_screen_list(y0);
+            if (!g_disks.disks.empty())
+                hint = "{updown} " + tr("hint_select", "select disk") + "     {cross} " + tr("hint_open", "open disk") + "     {square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
+            else
+                hint = "{square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
         }
     }
 
     for (size_t i = 0; i < g_diagLines.size(); i++) draw_text(g_diagLines[i].substr(0, 130), MARGIN_X, 900 + (int)i * 30, C_DIMMER, C_BG);
 
-    // Подсказка внизу.
-    std::string hint = "{cross} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
-    put_center_rich(FRAME_WIDTH / 2, hint, 1010, C_DIM, C_BG);
+    if (!hint.empty() && g_confirm == CONF_NONE) put_center_rich(FRAME_WIDTH / 2, hint, 1010, C_DIM, C_BG);
     std::string credit = "PS4 HDD Tools v" + version_str() + " Created by SergioPoverony and Mr.Claude";
-    {
-        int n = 0; const unsigned char* p = (const unsigned char*)credit.c_str();
-        while (*p) { decode_utf8(p); n++; }
-        draw_text(credit, (FRAME_WIDTH - n * g_cellW) / 2, 1050, C_DIMMER, C_BG);
-    }
+    draw_text(credit, (FRAME_WIDTH - count_cp(credit) * g_cellW) / 2, 1050, C_DIMMER, C_BG);
 
-    if (g_confirmQuit) {
-        draw_panel(900, 300);
-        int cx = FRAME_WIDTH / 2, y = (FRAME_HEIGHT - 300) / 2;
-        std::string t = tr("quit_title", "Shut down the service?");
-        { int n = 0; const unsigned char* p = (const unsigned char*)t.c_str(); while (*p) { decode_utf8(p); n++; } draw_text(t, cx - n * g_cellW / 2, y + 60, C_TEXT, C_PANEL); }
-        std::string d = tr("quit_desc", "");
-        // перенос по ширине панели
-        size_t pos = 0; int line = 0; const int maxc = 52;
-        while (pos < d.size() && line < 3) {
-            size_t end = pos + maxc; if (end >= d.size()) end = d.size();
-            else { size_t sp = d.rfind(' ', end); if (sp != std::string::npos && sp > pos) end = sp; }
-            draw_text(d.substr(pos, end - pos), cx - 430, y + 110 + line * 34, C_DIM, C_PANEL);
-            pos = end; while (pos < d.size() && d[pos] == ' ') pos++;
-            line++;
+    if (g_confirm != CONF_NONE) {
+        draw_panel(1040, 340);
+        int cx = FRAME_WIDTH / 2, y = (FRAME_HEIGHT - 340) / 2;
+        std::string title, body, yesLbl;
+        if (g_confirm == CONF_QUIT) {
+            title = tr("quit_title", "Shut down the service?");
+            body = tr("quit_desc", "");
+            yesLbl = tr("yes", "shut down");
+        } else if (g_confirm == CONF_SCAN_START) {
+            const DiskView* d = sel_disk();
+            title = tr("scan_start_q", "Start scanning disk") + " " + (d ? d->id : "") + "?";
+            char b[256];
+            snprintf(b, sizeof(b), "%.1f GB, ~%s, ~%.0f MB/s. %s",
+                     (double)(g_confirmEst.to - g_confirmEst.from) / 1e9,
+                     fmt_time((double)g_confirmEst.seconds).c_str(),
+                     g_confirmEst.speed / 1e6,
+                     tr("cWarn", "The disk and the console will be heavily loaded. No data is modified.").c_str());
+            body = b;
+            yesLbl = tr("cYes", "Start scan");
+        } else if (g_confirm == CONF_SCAN_STOP) {
+            title = tr("stopQ", "Stop the scan?");
+            yesLbl = tr("sYes", "Stop");
         }
-        std::string b = "{cross} " + tr("yes", "shut down") + "     {circle} " + tr("cancel", "cancel");
-        put_center_rich(cx, b, y + 260, C_TEXT, C_PANEL);
+        put_center(cx, title, y + 60, C_TEXT, C_PANEL);
+        draw_wrapped(body, cx - 480, y + 110, 62, 4, C_DIM, C_PANEL);
+        std::string b2 = "{cross} " + yesLbl + "     {circle} " + tr("cancel", "cancel");
+        put_center_rich(cx, b2, y + 300, C_TEXT, C_PANEL);
     }
 }
 
@@ -577,30 +869,8 @@ bool ui_init()
     g_bannerOk = g_banner.load("/app0/assets/images/title.png");
     if (g_bannerOk) g_bannerW = BANNER_H * g_banner.width / g_banner.height;
 
-    // Временный опыт: что даёт GoldHEN SDK (системный вызов 500). Только чтение, права сразу возвращаются.
-    g_diagLines.push_back(diag_run("before"));
-    {
-        bool ok = false;
-        long ver = gh_version(&ok);
-        logf_("gh: version call -> ret=%ld ok=%d", ver, ok ? 1 : 0);
-        char b[96];
-        snprintf(b, sizeof(b), "gh version: ret=0x%lX ok=%d", ver, ok ? 1 : 0);
-        g_diagLines.push_back(b);
-        if (ok) {
-            jailbreak_backup jb;
-            memset(&jb, 0, sizeof(jb));
-            bool jok = false;
-            long jr = gh_jailbreak(&jb, &jok);
-            logf_("gh: jailbreak -> ret=%ld ok=%d", jr, jok ? 1 : 0);
-            std::string after = diag_run("jailbroken");
-            bool uok = false;
-            long ur = gh_unjailbreak(&jb, &uok);
-            logf_("gh: unjailbreak -> ret=%ld ok=%d, uid now %d", ur, uok ? 1 : 0, (int)getuid());
-            snprintf(b, sizeof(b), "jailbreak ret=%ld ok=%d, unjailbreak ret=%ld ok=%d", jr, jok ? 1 : 0, ur, uok ? 1 : 0);
-            g_diagLines.push_back(b);
-            g_diagLines.push_back(after);
-        }
-    }
+    // Опыт с GoldHEN SDK (syscall 500) завершён: на консоли вызов не проходит из песочницы
+    // обычного приложения (ok=0), путь закрыт - см. HANDOFF.md. Диагностику убрали с экрана.
     bool padOk = pad_init();
     logf_("ui: ready, cell width %d, pad %s", g_cellW, padOk ? "ok" : "FAILED");
     g_ready = true;
@@ -618,20 +888,62 @@ void ui_pump()
     static unsigned prev = 0;
     unsigned pressed = b & ~prev;
     prev = b;
-    bool cross   = (pressed & ORBIS_PAD_BUTTON_CROSS) != 0;
-    bool circle  = (pressed & ORBIS_PAD_BUTTON_CIRCLE) != 0;
-    bool options = (pressed & ORBIS_PAD_BUTTON_OPTIONS) != 0;
+    bool cross    = (pressed & ORBIS_PAD_BUTTON_CROSS) != 0;
+    bool circle   = (pressed & ORBIS_PAD_BUTTON_CIRCLE) != 0;
+    bool triangle = (pressed & ORBIS_PAD_BUTTON_TRIANGLE) != 0;
+    bool square   = (pressed & ORBIS_PAD_BUTTON_SQUARE) != 0;
+    bool options  = (pressed & ORBIS_PAD_BUTTON_OPTIONS) != 0;
+    bool up       = (pressed & ORBIS_PAD_BUTTON_UP) != 0;
+    bool down     = (pressed & ORBIS_PAD_BUTTON_DOWN) != 0;
 
-    if (g_confirmQuit) {
+    if (g_confirm != CONF_NONE) {
         if (cross) {
-            service_quit();
-            g_confirmQuit = false; g_svc = S_STOPPED; g_disksOk = false; g_redraw = 2;
-        } else if (circle) { g_confirmQuit = false; g_redraw = 2; }
+            if (g_confirm == CONF_QUIT) {
+                service_quit();
+                g_svc = S_STOPPED; g_disksOk = false; g_screen = SCR_LIST;
+            } else if (g_confirm == CONF_SCAN_START) {
+                const DiskView* d = sel_disk();
+                if (d) { service_scan_start(d->id, 0, 0); g_nextState = now; }
+            } else if (g_confirm == CONF_SCAN_STOP) {
+                service_scan_stop(); g_nextState = now;
+            }
+            g_confirm = CONF_NONE; g_redraw = 2;
+        } else if (circle) { g_confirm = CONF_NONE; g_redraw = 2; }
     } else if (options && g_svc == S_READY) {
-        g_confirmQuit = true; g_redraw = 2;
-    } else if (cross) {
-        if (g_svc == S_READY) { service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false; g_redraw = 2; }
-        else if (g_svc == S_FAILED || g_svc == S_STOPPED) { g_svc = S_CHECK; g_redraw = 2; }
+        g_confirm = CONF_QUIT; g_redraw = 2;
+    } else if (g_svc == S_FAILED || g_svc == S_STOPPED) {
+        if (cross) { g_svc = S_CHECK; g_redraw = 2; }
+    } else if (g_svc == S_READY) {
+        if (g_screen == SCR_LIST) {
+            if ((up || down) && !g_disks.disks.empty()) {
+                int i = sel_idx(); int n = (int)g_disks.disks.size();
+                if (i < 0) i = 0; else i = up ? (i - 1 + n) % n : (i + 1) % n;
+                g_selId = g_disks.disks[(size_t)i].id; g_redraw = 2;
+            } else if (cross) {
+                if (sel_disk()) { g_screen = SCR_DISK; g_redraw = 2; }
+            } else if (square) {
+                service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false; g_redraw = 2;
+            }
+        } else if (g_screen == SCR_DISK) {
+            if (circle) { g_screen = SCR_LIST; g_redraw = 2; }
+            else if (cross) { g_screen = SCR_SCAN; g_scanMsg.clear(); g_redraw = 2; }
+        } else if (g_screen == SCR_SCAN) {
+            const DiskView* d = sel_disk();
+            bool mineRunning = d && g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
+            if (circle) { g_screen = SCR_DISK; g_redraw = 2; }
+            else if (triangle && mineRunning) { g_confirm = CONF_SCAN_STOP; g_redraw = 2; }
+            else if (cross && d) {
+                if (mineRunning) {
+                    if (g_state.scan.state == "paused") service_scan_resume(); else service_scan_pause();
+                    g_nextState = now;
+                } else if (!g_scanBusy && g_state.job == "idle") {
+                    g_scanBusy = true; g_scanMsg.clear();
+                    service_scan_estimate(d->id, 0, 0);
+                    g_nextState = now;
+                }
+                g_redraw = 2;
+            }
+        }
     }
 
     static uint64_t lastTick = 0;

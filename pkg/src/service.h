@@ -20,13 +20,34 @@ bool service_send_payload(std::string& err, bool* connectFailed = nullptr);
 // Просит службу выключиться (POST /quit).
 bool service_quit();
 
-// Данные дисков (разбор /api/disks).
+// Один показатель SMART (как в /api/disks: smart.attrs[]).
+struct SmartAttrView {
+    int id = 0;
+    std::string name;   // человекочитаемое имя с сервера (n)
+    int cur = 0, worst = 0, thresh = 0;
+    std::string raw;    // hex-строка (rx)
+    int sev = 0;        // 0 норма, 1 внимание, 2 плохо
+};
+
+// Причина вердикта (reasons[]).
+struct SmartReasonView {
+    int sev = 0;
+    std::string code;   // status_fail, thr, attr, temp
+    int id = 0;
+    int64_t value = 0;
+};
+
+// Данные дисков (разбор /api/disks). Полный набор SMART-полей для экрана диска.
 struct DiskView {
-    std::string id, label, model, bridge;
+    std::string id, path, label, model, bridge, firmware, serial, proto;
     uint64_t bytes = 0;
     int verdict = -1;    // 0 здоров, 1 внимание, 2 плохо, -1 нет данных SMART
     int temp = 0;
+    int rpm = -1;        // -1 неизвестно, 1 = SSD, иначе об/мин
+    int64_t poh = -1, cycles = -1, hostRead = -1, hostWrite = -1;
     bool hasSmart = false;
+    std::vector<SmartAttrView> attrs;
+    std::vector<SmartReasonView> reasons;
 };
 struct DisksView {
     bool loaded = false;
@@ -36,3 +57,42 @@ struct DisksView {
 bool service_disks(DisksView& out);
 std::string service_sig();            // пусто при ошибке
 bool service_refresh_disks();         // POST /api/refresh
+
+// Состояние сканирования поверхности (разбор /api/state: job + scan + est).
+struct ScanView {
+    bool present = false;
+    std::string disk, state, msg;
+    uint64_t from = 0, to = 0, done = 0;
+    double speed = 0;
+    int eta = -1;
+    double elapsed = 0;
+    uint64_t bad = 0;
+    bool approx = false;
+    uint64_t hist[8] = {0};              // индексы 1..7
+    std::vector<uint64_t> badlba;
+    std::string map;                     // 500 символов '0'..'7'
+};
+struct EstView {
+    bool present = false;
+    std::string disk;
+    bool ok = false;
+    uint64_t from = 0, to = 0;
+    double speed = 0;
+    int seconds = -1;
+};
+struct StateView {
+    bool ok = false;        // true, если служба ответила и JSON разобрался
+    std::string job;        // "idle", "refresh", "bench", "scan"
+    bool loaded = false;
+    ScanView scan;
+    EstView est;
+};
+bool service_state(StateView& out);
+
+// Запускает замер скорости перед сканированием (POST /api/scan/estimate).
+bool service_scan_estimate(const std::string& disk, uint64_t fromGb, uint64_t toGb);
+// Запускает само сканирование (POST /api/scan/start).
+bool service_scan_start(const std::string& disk, uint64_t fromGb, uint64_t toGb);
+bool service_scan_pause();
+bool service_scan_resume();
+bool service_scan_stop();
