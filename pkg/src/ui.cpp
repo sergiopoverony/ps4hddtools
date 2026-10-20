@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "service.h"
 #include "diag.h"
+#include "ghsdk.h"
 #include "scene.h"
 #include "image.h"
 #include "i18n.h"
@@ -9,6 +10,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include <unistd.h>
 #include <string>
 #include <vector>
 
@@ -327,7 +329,7 @@ static std::string g_pendingSig;
 static bool        g_confirmQuit = false;
 
 static std::string version_str() { return APP_VERSION; }
-static std::string g_diagLine;
+static std::vector<std::string> g_diagLines;
 
 static void svc_send_now()
 {
@@ -507,7 +509,7 @@ static void draw_all()
         }
     }
 
-    if (!g_diagLine.empty()) draw_text(g_diagLine.substr(0, 130), MARGIN_X, 960, C_DIMMER, C_BG);
+    for (size_t i = 0; i < g_diagLines.size(); i++) draw_text(g_diagLines[i].substr(0, 130), MARGIN_X, 900 + (int)i * 30, C_DIMMER, C_BG);
 
     // Подсказка внизу.
     std::string hint = "{cross} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_quit", "shut down the service");
@@ -578,7 +580,30 @@ bool ui_init()
     g_bannerOk = g_banner.load("/app0/assets/images/title.png");
     if (g_bannerOk) g_bannerW = BANNER_H * g_banner.width / g_banner.height;
 
-    g_diagLine = diag_run();   // временная диагностика прав приложения (чтение, ничего не пишет)
+    // Временный опыт: что даёт GoldHEN SDK (системный вызов 500). Только чтение, права сразу возвращаются.
+    g_diagLines.push_back(diag_run("before"));
+    {
+        bool ok = false;
+        long ver = gh_version(&ok);
+        logf_("gh: version call -> ret=%ld ok=%d", ver, ok ? 1 : 0);
+        char b[96];
+        snprintf(b, sizeof(b), "gh version: ret=0x%lX ok=%d", ver, ok ? 1 : 0);
+        g_diagLines.push_back(b);
+        if (ok) {
+            jailbreak_backup jb;
+            memset(&jb, 0, sizeof(jb));
+            bool jok = false;
+            long jr = gh_jailbreak(&jb, &jok);
+            logf_("gh: jailbreak -> ret=%ld ok=%d", jr, jok ? 1 : 0);
+            std::string after = diag_run("jailbroken");
+            bool uok = false;
+            long ur = gh_unjailbreak(&jb, &uok);
+            logf_("gh: unjailbreak -> ret=%ld ok=%d, uid now %d", ur, uok ? 1 : 0, (int)getuid());
+            snprintf(b, sizeof(b), "jailbreak ret=%ld ok=%d, unjailbreak ret=%ld ok=%d", jr, jok ? 1 : 0, ur, uok ? 1 : 0);
+            g_diagLines.push_back(b);
+            g_diagLines.push_back(after);
+        }
+    }
     bool padOk = pad_init();
     logf_("ui: ready, cell width %d, pad %s", g_cellW, padOk ? "ok" : "FAILED");
     g_ready = true;
