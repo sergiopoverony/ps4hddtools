@@ -24,7 +24,30 @@
 
 Нужен [OpenOrbis PS4 Toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) и переменная `OO_PS4_TOOLCHAIN` (как для ps4torrent client), а для сборки самой службы (в корне проекта) - `ps4-payload-sdk` и переменная `PS4_PAYLOAD_SDK`.
 
-**Проще всего** (собирает и службу, и приложение одной командой, без риска получить PKG со старым payload внутри):
+### Для новичка: с нуля
+
+Если оба тулчейна уже установлены (OpenOrbis распакован в свою папку, `ps4-payload-sdk` - в свою), вот весь путь от клонирования до готового PKG:
+
+```bash
+# 1. Клонируем репозиторий (ветка pkg-dev - там живёт приложение)
+cd ~
+git clone -b pkg-dev https://github.com/sergiopoverony/ps4hddtools.git ps4hddtools_new
+cd ps4hddtools_new
+
+# 2. Говорим make, где лежат тулчейны (пути - свои, смотрите, куда распаковывали)
+export PS4_PAYLOAD_SDK=/opt/ps4-payload-sdk
+export OO_PS4_TOOLCHAIN=/путь/к/OpenOrbis-PS4-Toolchain
+
+# 3. Собираем всё одной командой
+cd pkg
+make full
+```
+
+После успешной сборки в папке `pkg/` появится `IV0000-BREW00089_00-PS4HDDTOOLS00000.pkg` - его и ставим на консоль через GoldHEN (Install PKG).
+
+Если `make full` падает на шаге сборки службы (`make -C ..`) с ошибкой вида `ld.lld: error: cannot find linker script /ldscripts/elf_x86_64.x` - убедитесь, что `PS4_PAYLOAD_SDK` экспортирован (шаг 2), и обновитесь (`git pull`) - эта ошибка была в самом тулчейне `ps4-payload-sdk` (он не всегда подхватывал свой путь сам), и мы обошли её в своём Makefile.
+
+**Проще всего** (если переменные окружения уже выставлены - собирает и службу, и приложение одной командой, без риска получить PKG со старым payload внутри):
 ```
 cd pkg
 make full
