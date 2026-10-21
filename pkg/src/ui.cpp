@@ -993,7 +993,7 @@ static void draw_all(uint64_t now)
         } else if (!d) {
             draw_text(tr("pick_disk", "Select a disk above and press Cross"), MARGIN_X, bodyY + 30, C_DIM, C_BG);
         } else {
-            const int leftW = 960, gapX = 14;   // SMART-таблица теперь сама использует всю ширину панели - промежуток можно сузить ещё
+            const int leftW = 880, gapX = 14;   // SMART чуть уже - деление экрана выглядело смещённым не по центру, правая панель (проверка) забирает освободившееся
             int rightX = MARGIN_X + leftW + gapX;
             int rightW = FRAME_WIDTH - rightX - MARGIN_X;
             bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
