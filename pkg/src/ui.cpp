@@ -1147,10 +1147,11 @@ static bool keyboard_edit_number(const std::string& title, uint64_t current, uin
     OrbisImeDialogSetting setting;
     memset(&setting, 0, sizeof(setting));
     setting.userId = (uint32_t)g_userId;
-    // ORBIS_TYPE_NUMBER не проверен и может быть причиной того, что введённое не доходит до
-    // программы; ORBIS_TYPE_DEFAULT - именно то, что использует проверенное на консоли
-    // apollo-ps4. Отбор только цифр всё равно делаем сами при разборе результата ниже.
-    setting.type = ORBIS_TYPE_DEFAULT;
+    // Раньше здесь стоял ORBIS_TYPE_DEFAULT - подстраховка на случай, если дело было в типе
+    // диалога (оказалось - не в нём, а в испорченном заголовке из-за кириллицы, см. выше
+    // utf8_to_utf16()); DEFAULT показывал буквенную клавиатуру вместо цифровой, что неудобно
+    // для ввода ГБ. Возвращён ORBIS_TYPE_NUMBER - сразу цифровая клавиатура.
+    setting.type = ORBIS_TYPE_NUMBER;
     setting.supportedLanguages = 0;
     setting.enterLabel = ORBIS_BUTTON_LABEL_DEFAULT;
     setting.inputMethod = ORBIS__DEFAULT;
@@ -1340,8 +1341,10 @@ void ui_pump()
             bool mineRunning = d && g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
             std::vector<ActKind> items = action_items(mineRunning);
             int n = (int)items.size();
+            // Circle здесь не используется (можно случайно задеть при игре с From/To) - назад
+            // к вкладкам только по Up/Down, как и было задумано; Circle остаётся "назад" только
+            // в меню и на окне с QR-кодом.
             if (up || down) { g_focus = FOCUS_TABS; g_redraw = 2; }
-            else if (circle) { g_focus = FOCUS_TABS; g_redraw = 2; }
             else if ((left || right) && n > 0) {
                 g_actionCursor = left ? (g_actionCursor - 1 + n) % n : (g_actionCursor + 1) % n;
                 g_redraw = 2;
