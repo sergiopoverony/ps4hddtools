@@ -1055,11 +1055,11 @@ static void draw_all(uint64_t now)
 
     for (size_t i = 0; i < g_diagLines.size(); i++) draw_text(g_diagLines[i].substr(0, 130), MARGIN_X, 900 + (int)i * 30, C_DIMMER, C_BG);
 
-    // Подсказка и строка версии опущены пониже (1010->1020, 1050->1058) - раньше рамка панелей
-    // почти касалась текста подсказки, теперь ниже панелей (PANEL_BOTTOM=980) освободилось место.
-    // Центрирование обеих строк было и так верным (по формуле от ширины текста), просто
-    // раньше рамка снизу визуально перетягивала внимание - сейчас между ними явный зазор.
-    if (!hint.empty() && g_confirm == CONF_NONE) put_center_rich(FRAME_WIDTH / 2, hint, 1020, C_DIM, C_BG);
+    // Подсказка и строка версии опущены пониже (1010->1020->1030, 1050->1058) - раньше рамка
+    // панелей почти касалась текста подсказки, теперь ниже панелей (PANEL_BOTTOM=980) освободилось
+    // место. Подсказку сдвинули ещё чуть ниже (1020->1030), ближе к строке версии - так она
+    // визуально встаёт по центру зазора между блоками и версией.
+    if (!hint.empty() && g_confirm == CONF_NONE) put_center_rich(FRAME_WIDTH / 2, hint, 1030, C_DIM, C_BG);
     std::string credit = "PS4 HDD Tools v" + version_str() + " Created by SergioPoverony and Mr.Claude";
     draw_text(credit, (FRAME_WIDTH - count_cp(credit) * g_cellW) / 2, 1058, C_DIMMER, C_BG);
 
