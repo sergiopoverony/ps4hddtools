@@ -752,24 +752,30 @@ static void draw_screen_disk(const DiskView& d, int x0, int w, int y0)
     y2 += 10;
     draw_text(tr("attrs", "SMART attributes"), x0, y2, C_TEXT, C_BG);
     y2 += 30;
-    put_left(x0, 0, tr("id", "ID"), y2, C_DIM, C_BG);
-    put_left(x0, 4, tr("name", "Name"), y2, C_DIM, C_BG);
-    put_right(x0, 21, 6, tr("cur", "Current"), y2, C_DIM, C_BG);
-    put_right(x0, 28, 6, tr("worst", "Worst"), y2, C_DIM, C_BG);
-    put_right(x0, 35, 6, tr("thr", "Thresh"), y2, C_DIM, C_BG);
-    put_right(x0, 46, 10, tr("raw", "Raw"), y2, C_DIM, C_BG);
+    // Колонки считаем от реальной доступной ширины панели (charsAvail), а не фиксированными
+    // символами под старую, узкую панель - иначе таблица занимает только часть панели, а
+    // оставшееся место выглядит как пустой провал перед блоком проверки.
+    int cId = 0, cName = 4;
+    int cRaw = charsAvail - 13, cThr = charsAvail - 21, cWorst = charsAvail - 29, cCur = charsAvail - 37;
+    int nameW = cCur - cName - 2; if (nameW < 10) nameW = 10;
+    put_left(x0, cId, tr("id", "ID"), y2, C_DIM, C_BG);
+    put_left(x0, cName, tr("name", "Name"), y2, C_DIM, C_BG);
+    put_right(x0, cCur, 6, tr("cur", "Current"), y2, C_DIM, C_BG);
+    put_right(x0, cWorst, 6, tr("worst", "Worst"), y2, C_DIM, C_BG);
+    put_right(x0, cThr, 6, tr("thr", "Thresh"), y2, C_DIM, C_BG);
+    put_right(x0, cRaw, 12, tr("raw", "Raw"), y2, C_DIM, C_BG);
     y2 += 26;
     for (size_t i = 0; i < d.attrs.size(); i++) {
         if (y2 > 1000) break;
         const SmartAttrView& a = d.attrs[i];
         Color rc = a.sev == 2 ? C_RED : a.sev == 1 ? C_AMBER : C_TEXT;
         char idhex[8]; snprintf(idhex, sizeof(idhex), "%02X", (unsigned)a.id);
-        put_left(x0, 0, idhex, y2, rc, C_BG);
-        put_left(x0, 4, fit(a.name, 16), y2, C_TEXT, C_BG);
-        put_right(x0, 21, 6, fmt_num((uint64_t)a.cur), y2, C_TEXT, C_BG);
-        put_right(x0, 28, 6, fmt_num((uint64_t)a.worst), y2, C_TEXT, C_BG);
-        put_right(x0, 35, 6, fmt_num((uint64_t)a.thresh), y2, C_TEXT, C_BG);
-        put_right(x0, 46, 10, fit(a.raw, 10), y2, C_DIMMER, C_BG);
+        put_left(x0, cId, idhex, y2, rc, C_BG);
+        put_left(x0, cName, fit(a.name, nameW), y2, C_TEXT, C_BG);
+        put_right(x0, cCur, 6, fmt_num((uint64_t)a.cur), y2, C_TEXT, C_BG);
+        put_right(x0, cWorst, 6, fmt_num((uint64_t)a.worst), y2, C_TEXT, C_BG);
+        put_right(x0, cThr, 6, fmt_num((uint64_t)a.thresh), y2, C_TEXT, C_BG);
+        put_right(x0, cRaw, 12, fit(a.raw, 12), y2, C_DIMMER, C_BG);
         y2 += 26;
     }
 }
@@ -837,7 +843,7 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     // Легенда занимала почти 40% ширины - сузили почти вдвое (~18%), карта получила освободившееся
     // место и стала крупнее (по просьбе пользователя).
     const int cols = 25, rows = 20, gap = 2, cellH = 16;
-    int legGap = 16, legW = (int)(w * 0.18);
+    int legGap = 16, legW = (int)(w * 0.23);   // чуть шире - подписи категорий меньше обрезались
     int mapW = w - legW - legGap;
     int cellW = (mapW - (cols - 1) * gap) / cols;
     int mapY = barY + 26;
@@ -987,7 +993,7 @@ static void draw_all(uint64_t now)
         } else if (!d) {
             draw_text(tr("pick_disk", "Select a disk above and press Cross"), MARGIN_X, bodyY + 30, C_DIM, C_BG);
         } else {
-            const int leftW = 960, gapX = 24;   // шире SMART-панель, уже промежуток между панелями
+            const int leftW = 960, gapX = 14;   // SMART-таблица теперь сама использует всю ширину панели - промежуток можно сузить ещё
             int rightX = MARGIN_X + leftW + gapX;
             int rightW = FRAME_WIDTH - rightX - MARGIN_X;
             bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
