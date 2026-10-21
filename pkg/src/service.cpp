@@ -14,13 +14,15 @@ const int   SERVICE_PORT = 8686;
 static const int LOADER_PORT = 9090;
 static const char* PAYLOAD_PATH = "/app0/assets/misc/ps4hddtools.elf";
 
-// Папка автозапуска GoldHEN (AutoRun в payloads.ini) и файл конфига - именно так, как это
-// устроено у самого GoldHEN для других payload'ов (подтверждено пользователем по его реальному
-// payloads.ini: "/user/data/payloads/<имя>.elf = 1" под секцией [AutoRun], сам файл конфига -
-// "/data/GoldHEN/payloads.ini"). Путь до самого payload-файла взят буквально таким же, каким
-// он должен быть виден GoldHEN (который видит файловую систему не из нашего сэндбокса) - поэтому
-// тут не переиспользуется "/data/..." (как для своих логов) на случай, если это разные алиасы.
-static const char* AUTORUN_ELF_PATH = "/user/data/payloads/ps4hddtools.elf";
+// Папка автозапуска GoldHEN (AutoRun в payloads.ini) и файл конфига.
+// Путь "/user/data/payloads/..." (как в примере пользователя для других payload'ов) оказался
+// недоступен для записи из сэндбокса этого приложения (лог: "autorun: cannot write
+// /user/data/payloads/ps4hddtools.elf") - значит это не тот же алиас, что "/data/...", которым
+// пользуются собственные файлы приложения (логи и т.п.), и из нашего процесса он не виден.
+// Используем "/data/payloads/..." - этот путь точно доступен на запись из сэндбокса, и именно
+// его просил использовать пользователь. Тот же путь пишем и в payloads.ini - если GoldHEN
+// сам видит "/data" как тот же раздел (а не как недоступный извне алиас), найдёт файл там.
+static const char* AUTORUN_ELF_PATH = "/data/payloads/ps4hddtools.elf";
 static const char* AUTORUN_INI_PATH = "/data/GoldHEN/payloads.ini";
 
 bool service_query(std::string& version, bool& busy)
@@ -54,8 +56,7 @@ bool service_install_autorun(std::string& err)
     fclose(f);
     if (data.size() < 1024) { err = "payload file is empty"; return false; }
 
-    mkdir("/user/data", 0777);
-    mkdir("/user/data/payloads", 0777);
+    mkdir("/data/payloads", 0777);
     FILE* out = fopen(AUTORUN_ELF_PATH, "wb");
     if (!out) { err = std::string("cannot write ") + AUTORUN_ELF_PATH; logf_("autorun: %s", err.c_str()); return false; }
     size_t wn = fwrite(data.data(), 1, data.size(), out);

@@ -17,7 +17,7 @@ bool service_query(std::string& version, bool& busy);
 // connectFailed (необязателен): true, если не удалось именно подключиться к порту (BinLoader выключен).
 bool service_send_payload(std::string& err, bool* connectFailed = nullptr);
 
-// Копирует payload в папку автозапуска GoldHEN (/user/data/payloads/ps4hddtools.elf) и
+// Копирует payload в папку автозапуска GoldHEN (/data/payloads/ps4hddtools.elf) и
 // прописывает его в /data/GoldHEN/payloads.ini под [AutoRun] = 1, если его там ещё нет -
 // после этого GoldHEN сам поднимает службу через несколько секунд после своей активации,
 // без необходимости открывать это приложение. Файл копируется заново при каждом запуске
