@@ -394,8 +394,17 @@ static const DiskView* sel_disk()
 // Если BinLoader GoldHEN (порт 9090) выключен, приложение не может включить его само
 // (GoldHEN не перечитывает config.ini на лету) - показываем ошибку с подсказкой,
 // Cross повторяет попытку вручную.
+//
+// Сюда попадаем только тогда, когда служба не отвечает или отвечает не той версией (см.
+// svc_step()/S_CHECK) - то есть именно тот момент, когда её действительно нужно (пере)поднять.
+// Если служба уже работает нужной версией, этот код вообще не вызывается - ни копирования,
+// ни правки payloads.ini, ни отправки через 9090 не происходит, приложение просто идёт дальше
+// к интерфейсу (так и было задумано - не трогать диск на каждый запуск, если всё уже так работает).
 static void svc_send_now()
 {
+    std::string instErr;
+    if (!service_install_autorun(instErr)) logf_("autorun install failed: %s", instErr.c_str());
+
     std::string err;
     bool connectFailed = false;
     if (service_send_payload(err, &connectFailed)) {
