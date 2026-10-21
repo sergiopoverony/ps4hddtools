@@ -1095,6 +1095,33 @@ static unsigned pad_read()
 // размера элемента буфер эффективно читался/писался невпопад: отсюда пустое поле при открытии
 // и то, что введённое не доходило до out. Сейчас буфер - uint16_t[], заполняется и разбирается
 // вручную (цифры ASCII совпадают с их кодами UTF-16, поэтому конвертировать можно напрямую).
+// Переводит UTF-8 строку (заголовки берутся из lang_*.json, там кириллица) в UTF-16 код-юниты
+// для системной клавиатуры. Переиспользует decode_utf8() (см. выше) вместо побайтового
+// копирования - тот способ ломал кириллицу ("код как будто испорчен"), так как один символ
+// кириллицы в UTF-8 - это 2 байта, а не один UTF-16 код-юнит. Кодовые точки вне BMP (выше
+// 0xFFFF - нам не встречаются) кодируются суррогатной парой на случай будущих языков.
+static size_t utf8_to_utf16(const std::string& s, uint16_t* out, size_t outCap)
+{
+    size_t n = 0;
+    const unsigned char* p = (const unsigned char*)s.data();
+    const unsigned char* end = p + s.size();
+    while (p < end && n + 1 < outCap) {
+        int cp = decode_utf8(p);
+        if (cp < 0) break;
+        if (cp <= 0xFFFF) {
+            out[n++] = (uint16_t)cp;
+        } else if (n + 2 < outCap) {
+            cp -= 0x10000;
+            out[n++] = (uint16_t)(0xD800 + (cp >> 10));
+            out[n++] = (uint16_t)(0xDC00 + (cp & 0x3FF));
+        } else {
+            break;
+        }
+    }
+    out[n] = 0;
+    return n;
+}
+
 static bool keyboard_edit_number(const std::string& title, uint64_t current, uint64_t maxVal, uint64_t& out)
 {
     if (!g_imeReady) { logf_("ui: ime dialog not ready, skip keyboard"); return false; }
@@ -1104,20 +1131,26 @@ static bool keyboard_edit_number(const std::string& title, uint64_t current, uin
     memset(buf, 0, sizeof(buf));
     memset(wtitle, 0, sizeof(wtitle));
 
-    char digits[32];
-    snprintf(digits, sizeof(digits), "%llu", (unsigned long long)current);
-    size_t dn = strlen(digits);
-    if (dn > 31) dn = 31;
-    for (size_t i = 0; i < dn; i++) buf[i] = (uint16_t)(unsigned char)digits[i];
+    // Если текущее значение не задано (0 = "от начала"/"до конца диска", не настоящее число),
+    // не подставляем "0" в поле - пользователь просил: "лучше ничего не отображать", чем
+    // значение, которое выглядит как введённое, а на деле просто плейсхолдер диапазона.
+    if (current != 0) {
+        char digits[32];
+        snprintf(digits, sizeof(digits), "%llu", (unsigned long long)current);
+        size_t dn = strlen(digits);
+        if (dn > 31) dn = 31;
+        for (size_t i = 0; i < dn; i++) buf[i] = (uint16_t)(unsigned char)digits[i];
+    }
 
-    size_t tn = title.size();
-    if (tn > 63) tn = 63;
-    for (size_t i = 0; i < tn; i++) wtitle[i] = (uint16_t)(unsigned char)title[i]; // заголовок - только ASCII
+    utf8_to_utf16(title, wtitle, 64);
 
     OrbisImeDialogSetting setting;
     memset(&setting, 0, sizeof(setting));
     setting.userId = (uint32_t)g_userId;
-    setting.type = ORBIS_TYPE_NUMBER;
+    // ORBIS_TYPE_NUMBER не проверен и может быть причиной того, что введённое не доходит до
+    // программы; ORBIS_TYPE_DEFAULT - именно то, что использует проверенное на консоли
+    // apollo-ps4. Отбор только цифр всё равно делаем сами при разборе результата ниже.
+    setting.type = ORBIS_TYPE_DEFAULT;
     setting.supportedLanguages = 0;
     setting.enterLabel = ORBIS_BUTTON_LABEL_DEFAULT;
     setting.inputMethod = ORBIS__DEFAULT;
@@ -1237,7 +1270,16 @@ void ui_pump()
                 g_svc = S_STOPPED; g_disksOk = false; g_selId.clear(); g_focus = FOCUS_TABS;
             } else if (g_confirm == CONF_SCAN_START) {
                 const DiskView* d = sel_disk();
-                if (d) { service_scan_start(d->id, g_confirmFromGb, g_confirmToGb); g_nextState = now; }
+                if (d) {
+                    service_scan_start(d->id, g_confirmFromGb, g_confirmToGb);
+                    // Карта предыдущей проверки (если была) иначе видна ещё секунду-две, пока не
+                    // придёт первый свежий /api/state - выглядит как "не обнулилось". Чистим сразу,
+                    // не дожидаясь опроса.
+                    g_state.scan.map.clear();
+                    for (int i = 0; i < 8; i++) g_state.scan.hist[i] = 0;
+                    g_state.scan.done = 0; g_state.scan.bad = 0;
+                    g_nextState = now;
+                }
             } else if (g_confirm == CONF_SCAN_STOP) {
                 service_scan_stop(); g_nextState = now;
             }
