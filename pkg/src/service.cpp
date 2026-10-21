@@ -15,15 +15,17 @@ static const int LOADER_PORT = 9090;
 static const char* PAYLOAD_PATH = "/app0/assets/misc/ps4hddtools.elf";
 
 // Папка автозапуска GoldHEN (AutoRun в payloads.ini) и файл конфига.
-// Путь "/user/data/payloads/..." (как в примере пользователя для других payload'ов) оказался
-// недоступен для записи из сэндбокса этого приложения (лог: "autorun: cannot write
-// /user/data/payloads/ps4hddtools.elf") - значит это не тот же алиас, что "/data/...", которым
-// пользуются собственные файлы приложения (логи и т.п.), и из нашего процесса он не виден.
-// Используем "/data/payloads/..." - этот путь точно доступен на запись из сэндбокса, и именно
-// его просил использовать пользователь. Тот же путь пишем и в payloads.ini - если GoldHEN
-// сам видит "/data" как тот же раздел (а не как недоступный извне алиас), найдёт файл там.
-static const char* AUTORUN_ELF_PATH = "/data/payloads/ps4hddtools.elf";
-static const char* AUTORUN_INI_PATH = "/data/GoldHEN/payloads.ini";
+// Два разных пути для одного и того же файла:
+//  - AUTORUN_ELF_PATH - под этим путём файл реально пишется (fopen/mkdir) из сэндбокса этого
+//    приложения. "/user/data/payloads/..." для записи недоступен (лог: "autorun: cannot write
+//    /user/data/payloads/ps4hddtools.elf"), а "/data/payloads/..." доступен и работает.
+//  - AUTORUN_INI_ENTRY - именно этот путь (с "/user") нужно прописывать в payloads.ini, так
+//    выглядят все остальные (рабочие) записи AutoRun у пользователя (nanodns-ps4.elf и т.п.) -
+//    GoldHEN сам ищет файл по "/user/data/...", даже если он физически лежит там же, куда
+//    пишем мы под "/data/...".
+static const char* AUTORUN_ELF_PATH  = "/data/payloads/ps4hddtools.elf";
+static const char* AUTORUN_INI_ENTRY = "/user/data/payloads/ps4hddtools.elf";
+static const char* AUTORUN_INI_PATH  = "/data/GoldHEN/payloads.ini";
 
 bool service_query(std::string& version, bool& busy)
 {
@@ -72,29 +74,50 @@ bool service_install_autorun(std::string& err)
         fclose(fi);
     }
 
-    if (ini.find(AUTORUN_ELF_PATH) != std::string::npos) {
-        logf_("autorun: payload copied, payloads.ini already has an entry for it - leaving as is");
-        return true;
+    bool changed = false;
+
+    // Убираем старую (ошибочную) строку, прописанную прошлой версией этого кода - она
+    // указывала на "/data/payloads/..." вместо "/user/data/payloads/...", и по этому пути
+    // GoldHEN не находит файл. Ищем по самому пути (а не точной строке "= 1"), чтобы снять
+    // её независимо от значения.
+    {
+        size_t p;
+        while ((p = ini.find(AUTORUN_ELF_PATH)) != std::string::npos) {
+            size_t lineStart = ini.rfind('\n', p);
+            lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+            size_t lineEnd = ini.find('\n', p);
+            lineEnd = (lineEnd == std::string::npos) ? ini.size() : lineEnd + 1;
+            ini.erase(lineStart, lineEnd - lineStart);
+            changed = true;
+        }
     }
 
-    std::string entry = std::string(AUTORUN_ELF_PATH) + " = 1\n";
-    size_t sec = ini.find("[AutoRun]");
-    if (sec == std::string::npos) {
-        if (!ini.empty() && ini.back() != '\n') ini += "\n";
-        if (!ini.empty()) ini += "\n";
-        ini += "[AutoRun]\n";
-        ini += entry;
-    } else {
-        size_t lineEnd = ini.find('\n', sec);
-        size_t insertAt = (lineEnd == std::string::npos) ? ini.size() : lineEnd + 1;
-        ini.insert(insertAt, entry);
+    if (ini.find(AUTORUN_INI_ENTRY) == std::string::npos) {
+        std::string entry = std::string(AUTORUN_INI_ENTRY) + " = 1\n";
+        size_t sec = ini.find("[AutoRun]");
+        if (sec == std::string::npos) {
+            if (!ini.empty() && ini.back() != '\n') ini += "\n";
+            if (!ini.empty()) ini += "\n";
+            ini += "[AutoRun]\n";
+            ini += entry;
+        } else {
+            size_t lineEnd = ini.find('\n', sec);
+            size_t insertAt = (lineEnd == std::string::npos) ? ini.size() : lineEnd + 1;
+            ini.insert(insertAt, entry);
+        }
+        changed = true;
+    }
+
+    if (!changed) {
+        logf_("autorun: payload copied, payloads.ini already correct - leaving as is");
+        return true;
     }
 
     FILE* fw = fopen(AUTORUN_INI_PATH, "wb");
     if (!fw) { err = std::string("cannot write ") + AUTORUN_INI_PATH; logf_("autorun: %s", err.c_str()); return false; }
     fwrite(ini.data(), 1, ini.size(), fw);
     fclose(fw);
-    logf_("autorun: payload installed and registered in payloads.ini");
+    logf_("autorun: payload installed and registered in payloads.ini (%s)", AUTORUN_INI_ENTRY);
     return true;
 }
 
