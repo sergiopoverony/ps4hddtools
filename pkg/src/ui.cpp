@@ -137,9 +137,9 @@ static void draw_text(const std::string& s, int x, int baseline, Color fg, Color
 
 // ---------------------------------------------------------------- иконки кнопок геймпада
 // Рисуются кодом (без картинок): Cross, Circle, Square, Triangle, Options (три полоски) и стрелки вверх/вниз.
-// Токены в тексте: {cross} {circle} {square} {triangle} {options} {updown}.
+// Токены в тексте: {cross} {circle} {square} {triangle} {options} {updown} {arrows}.
 
-enum Icon { ICON_CROSS, ICON_CIRCLE, ICON_SQUARE, ICON_TRIANGLE, ICON_OPTIONS, ICON_UPDOWN };
+enum Icon { ICON_CROSS, ICON_CIRCLE, ICON_SQUARE, ICON_TRIANGLE, ICON_OPTIONS, ICON_UPDOWN, ICON_ARROWS };
 static const int ICON_S = 20;   // сторона иконки в пикселях - масштабируем вместе с FONT_PX
 
 static bool in_tri(float px, float py, float ax, float ay, float bx, float by, float cx, float cy)
@@ -176,6 +176,13 @@ static bool icon_hit(Icon k, float u, float v)
     case ICON_UPDOWN:
         return in_tri(u, v, 0.0f, -0.95f, -0.60f, -0.15f, 0.60f, -0.15f)
             || in_tri(u, v, -0.60f, 0.15f, 0.60f, 0.15f, 0.0f, 0.95f);
+    // Крестовина из 4 стрелок (общая "навигация" вместо отдельных Left/Right/Up/Down) -
+    // по одному треугольнику-стрелке в каждую сторону от центра.
+    case ICON_ARROWS:
+        return in_tri(u, v, 0.0f, -0.95f, -0.32f, -0.30f, 0.32f, -0.30f)
+            || in_tri(u, v, 0.0f, 0.95f, -0.32f, 0.30f, 0.32f, 0.30f)
+            || in_tri(u, v, -0.95f, 0.0f, -0.30f, -0.32f, -0.30f, 0.32f)
+            || in_tri(u, v, 0.95f, 0.0f, 0.30f, -0.32f, 0.30f, 0.32f);
     }
     return false;
 }
@@ -226,6 +233,7 @@ static bool icon_by_name(const std::string& n, Icon& out)
     if (n == "triangle") { out = ICON_TRIANGLE; return true; }
     if (n == "options")  { out = ICON_OPTIONS;  return true; }
     if (n == "updown")   { out = ICON_UPDOWN;   return true; }
+    if (n == "arrows")   { out = ICON_ARROWS;   return true; }
     return false;
 }
 
@@ -610,14 +618,30 @@ static void draw_panel(int w, int h)
     fill_rounded(x, y, w, h, 16, C_PANEL);
 }
 
+// maxc - число СИМВОЛОВ (не байт) в строке. Раньше здесь считали позиции в байтах
+// (pos + maxc напрямую по std::string) - для кириллицы (2 байта на символ в UTF-8) строка
+// обрывалась почти вдвое раньше нужного: окно подтверждения проверки (там кириллица - cWarn
+// и т.п.) получало текст только в левой половине ширины и в лишние короткие строки. Теперь
+// считаем символы через decode_utf8() (как и в fit()/count_cp()), а не байты.
 static void draw_wrapped(const std::string& s, int x, int yTop, int maxc, int maxLines, Color fg, Color bg)
 {
-    size_t pos = 0; int line = 0;
-    while (pos < s.size() && line < maxLines) {
-        size_t end = pos + (size_t)maxc; if (end >= s.size()) end = s.size();
-        else { size_t sp = s.rfind(' ', end); if (sp != std::string::npos && sp > pos) end = sp; }
-        draw_text(s.substr(pos, end - pos), x, yTop + line * 34, fg, bg);
-        pos = end; while (pos < s.size() && s[pos] == ' ') pos++;
+    const unsigned char* base = (const unsigned char*)s.c_str();
+    size_t total = s.size();
+    size_t pos = 0;
+    int line = 0;
+    while (pos < total && line < maxLines) {
+        const unsigned char* p = base + pos;
+        int n = 0;
+        while (*p && n < maxc) { decode_utf8(p); n++; }
+        size_t byteEnd = (size_t)(p - base);
+        if (byteEnd < total) {
+            size_t sp = s.rfind(' ', byteEnd);
+            if (sp != std::string::npos && sp > pos) byteEnd = sp;
+        } else {
+            byteEnd = total;
+        }
+        draw_text(s.substr(pos, byteEnd - pos), x, yTop + line * 34, fg, bg);
+        pos = byteEnd; while (pos < total && s[pos] == ' ') pos++;
         line++;
     }
 }
@@ -894,7 +918,7 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
 
     // Журнал службы (как на веб-странице) - под плитками статистики, до низа панели.
     int logY = statY + 2 * 56 + 16;
-    int logH = 996 - logY;
+    int logH = 976 - logY;   // низ панели поднят на 20px (как и в draw_all/PANEL_BOTTOM) - освободили место под подсказку
     if (logH > 40) {
         fill_rounded(x0, logY, w, logH, 10, C_PANEL);
         draw_text(tr("log", "Log"), x0 + 14, logY + 24, C_DIM, C_PANEL);
@@ -930,7 +954,10 @@ static void draw_menu_overlay()
         }
         draw_text(label, x + 40, ry + 22, C_TEXT, cur ? C_EDGE : C_PANEL);
     }
-    std::string hint = "{updown} " + tr("hint_select", "select") + "     {cross} " + tr("hint_open", "activate") + "     {circle} " + tr("hint_back", "back");
+    // Пользователь попросил оставить тут только подсказку про Circle - стрелки и Cross и так
+    // понятны по месту (строка меню подсвечена), а Circle - единственное, что не очевидно
+    // (закрывает меню). По центру низа панели - как и было.
+    std::string hint = "{circle} " + tr("hint_back", "back");
     put_center_rich(x + w / 2, hint, y + h - 16, C_DIM, C_PANEL);
 }
 
@@ -1007,35 +1034,47 @@ static void draw_all(uint64_t now)
             int rightW = FRAME_WIDTH - rightX - MARGIN_X;
             bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
             std::vector<ActKind> items = action_items(mineRunning);
+            // Рамку вокруг блоков пробовали - пользователю не понравилось, убрано совсем.
+            // Нижняя граница содержимого блоков (PANEL_BOTTOM) всё равно оставлена поднятой
+            // (1000->980, лог-панель 996->976) - освобождает место для подсказки и строки
+            // версии ниже, чтобы они не упирались в блоки впритык.
             draw_screen_disk(*d, MARGIN_X, leftW, bodyY);
             draw_screen_scan(*d, rightX, rightW, bodyY, items, mineRunning);
         }
 
+        // По просьбе пользователя - одна простая подсказка на все случаи вместо разных наборов
+        // (переключение/выбор/проверка/обновить) под каждый уровень фокуса: стрелки - навигация,
+        // Cross - активация, Options - меню. Детали (что именно активируется) и так видны по
+        // подсветке на экране.
         if (g_focus == FOCUS_MENU || g_showDonate) {
             hint.clear();
-        } else if (g_focus == FOCUS_ACTIONS) {
-            hint = "{<>} " + tr("hint_switch", "switch") + "     {cross} " + tr("hint_edit", "edit") + "     {updown} " + tr("hint_back", "back");
-        } else if (!g_disks.disks.empty()) {
-            hint = "{<>} " + tr("hint_switch", "switch") + "     {cross} " + tr("hint_open", "select disk");
-            if (d) hint += "     {updown} " + tr("hint_scan", "surface scan");
-            hint += "     {square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_menu", "menu");
         } else {
-            hint = "{square} " + tr("hint_refresh", "refresh disks") + "     {options} " + tr("hint_menu", "menu");
+            hint = "{arrows} " + tr("hint_nav", "navigation") + "     {cross} " + tr("hint_activate", "activate") + "     {options} " + tr("hint_menu", "menu");
         }
     }
 
     for (size_t i = 0; i < g_diagLines.size(); i++) draw_text(g_diagLines[i].substr(0, 130), MARGIN_X, 900 + (int)i * 30, C_DIMMER, C_BG);
 
-    if (!hint.empty() && g_confirm == CONF_NONE) put_center_rich(FRAME_WIDTH / 2, hint, 1010, C_DIM, C_BG);
+    // Подсказка и строка версии опущены пониже (1010->1020, 1050->1058) - раньше рамка панелей
+    // почти касалась текста подсказки, теперь ниже панелей (PANEL_BOTTOM=980) освободилось место.
+    // Центрирование обеих строк было и так верным (по формуле от ширины текста), просто
+    // раньше рамка снизу визуально перетягивала внимание - сейчас между ними явный зазор.
+    if (!hint.empty() && g_confirm == CONF_NONE) put_center_rich(FRAME_WIDTH / 2, hint, 1020, C_DIM, C_BG);
     std::string credit = "PS4 HDD Tools v" + version_str() + " Created by SergioPoverony and Mr.Claude";
-    draw_text(credit, (FRAME_WIDTH - count_cp(credit) * g_cellW) / 2, 1050, C_DIMMER, C_BG);
+    draw_text(credit, (FRAME_WIDTH - count_cp(credit) * g_cellW) / 2, 1058, C_DIMMER, C_BG);
 
     if (g_showDonate && g_confirm == CONF_NONE) draw_donate_overlay();
     else if (g_focus == FOCUS_MENU && g_confirm == CONF_NONE) draw_menu_overlay();
 
     if (g_confirm != CONF_NONE) {
-        draw_panel(1040, 340);
-        int cx = FRAME_WIDTH / 2, y = (FRAME_HEIGHT - 340) / 2;
+        // Пользователь: окно подтверждения было слишком широким без нужды (1040px) - сузили.
+        // Текст переносится по реальной доступной ширине (а не фиксированным числом символов,
+        // как раньше) - margin 40px с каждой стороны, maxc считается от g_cellW.
+        const int confirmW = 760, confirmH = 340;
+        draw_panel(confirmW, confirmH);
+        int cx = FRAME_WIDTH / 2, y = (FRAME_HEIGHT - confirmH) / 2;
+        int textX = cx - confirmW / 2 + 40;
+        int maxc = (confirmW - 80) / (g_cellW > 0 ? g_cellW : 1);
         std::string title, body, yesLbl;
         if (g_confirm == CONF_QUIT) {
             title = tr("quit_title", "Shut down the service?");
@@ -1057,9 +1096,9 @@ static void draw_all(uint64_t now)
             yesLbl = tr("sYes", "Stop");
         }
         put_center(cx, title, y + 60, C_TEXT, C_PANEL);
-        draw_wrapped(body, cx - 480, y + 110, 62, 4, C_DIM, C_PANEL);
+        draw_wrapped(body, textX, y + 110, maxc, 4, C_DIM, C_PANEL);
         std::string b2 = "{cross} " + yesLbl + "     {circle} " + tr("cancel", "cancel");
-        put_center_rich(cx, b2, y + 300, C_TEXT, C_PANEL);
+        put_center_rich(cx, b2, y + confirmH - 40, C_TEXT, C_PANEL);
     }
 }
 
