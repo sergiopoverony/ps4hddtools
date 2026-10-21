@@ -9,6 +9,16 @@ else
     $(error PS4_PAYLOAD_SDK is undefined)
 endif
 
+# Экспортируем переменную окружения PS4_PAYLOAD_SDK для дочерних процессов:
+# скрипт orbis-ld из ps4-payload-sdk сам не вычисляет свой путь (баг/опечатка
+# в самом SDK - там написано ${PS4_PAYLOAD_SDK}, хотя локально переменная
+# называется иначе), и если PS4_PAYLOAD_SDK не задана в окружении, линковщик
+# получает путь к линкер-скрипту без префикса ("/ldscripts/elf_x86_64.x"
+# вместо "/opt/ps4-payload-sdk/ldscripts/elf_x86_64.x") и падает с ошибкой
+# "cannot find linker script". export здесь гарантирует, что переменная
+# дойдёт до orbis-ld, даже если пользователь не экспортировал её сам.
+export PS4_PAYLOAD_SDK
+
 PS4_HOST ?= 192.168.0.24
 PS4_PORT ?= 9090
 TARGET   := build/ps4hddtools.elf
