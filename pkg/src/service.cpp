@@ -205,3 +205,12 @@ bool service_scan_start(const std::string& disk, uint64_t fromGb, uint64_t toGb)
 bool service_scan_pause()  { HttpResult r = http_post(SERVICE_HOST, SERVICE_PORT, "/api/scan/pause", "{}", 2000);  return r.connected && r.status == 200; }
 bool service_scan_resume() { HttpResult r = http_post(SERVICE_HOST, SERVICE_PORT, "/api/scan/resume", "{}", 2000); return r.connected && r.status == 200; }
 bool service_scan_stop()   { HttpResult r = http_post(SERVICE_HOST, SERVICE_PORT, "/api/scan/stop", "{}", 2000);   return r.connected && r.status == 200; }
+
+std::string service_log(size_t maxBytes)
+{
+    char path[32];
+    snprintf(path, sizeof(path), "/api/log?n=%zu", maxBytes);
+    HttpResult r = http_get(SERVICE_HOST, SERVICE_PORT, path, 2000);
+    if (!r.connected || r.status != 200) return "";
+    return r.body;
+}

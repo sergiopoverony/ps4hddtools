@@ -96,3 +96,6 @@ bool service_scan_start(const std::string& disk, uint64_t fromGb, uint64_t toGb)
 bool service_scan_pause();
 bool service_scan_resume();
 bool service_scan_stop();
+
+// Журнал службы (как /api/log на веб-странице): последние maxBytes байт, или "" при ошибке/недоступности.
+std::string service_log(size_t maxBytes = 4096);

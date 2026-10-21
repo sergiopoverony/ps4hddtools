@@ -357,6 +357,8 @@ static Confirm g_confirm = CONF_NONE;
 
 static StateView   g_state;
 static uint64_t    g_nextState = 0;
+static std::string g_logText;      // хвост /api/log (как на веб-странице), под картой сканирования
+static uint64_t    g_nextLog = 0;
 static bool        g_scanBusy = false;   // идёт замер скорости (между estimate и подтверждением)
 static std::string g_scanMsg;            // временное сообщение экрана сканирования (замер, ошибка)
 static EstView      g_confirmEst;        // результат замера, показанный в окне подтверждения старта
@@ -490,6 +492,12 @@ static void svc_step(uint64_t now)
                 g_redraw = 2;
             }
         }
+        // Журнал службы (как на веб-странице) - под картой проверки поверхности.
+        if (now >= g_nextLog) {
+            g_nextLog = now + 2000000ULL;
+            std::string t = service_log(4096);
+            if (!t.empty()) { g_logText = t; g_redraw = 2; }
+        }
     }
 }
 
@@ -603,6 +611,23 @@ static void draw_wrapped(const std::string& s, int x, int yTop, int maxc, int ma
         pos = end; while (pos < s.size() && s[pos] == ' ') pos++;
         line++;
     }
+}
+
+// Последние n непустых строк текста (как хвост терминала) - для панели журнала службы.
+static std::vector<std::string> last_lines(const std::string& s, size_t n)
+{
+    std::vector<std::string> all;
+    size_t pos = 0;
+    while (pos <= s.size()) {
+        size_t nl = s.find('\n', pos);
+        std::string line = (nl == std::string::npos) ? s.substr(pos) : s.substr(pos, nl - pos);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (!line.empty()) all.push_back(line);
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+    if (all.size() <= n) return all;
+    return std::vector<std::string>(all.end() - (long)n, all.end());
 }
 
 // ---------------------------------------------------------------- строка вкладок дисков + меню
@@ -809,8 +834,11 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     fill(x0, barY, barW, barH, Color{ 30, 33, 40 });
     fill(x0, barY, (int)((double)barW * pct / 100.0), barH, Color{ 91, 157, 255 });
 
+    // Легенда занимала почти 40% ширины - сузили почти вдвое (~18%), карта получила освободившееся
+    // место и стала крупнее (по просьбе пользователя).
     const int cols = 25, rows = 20, gap = 2, cellH = 16;
-    int mapW = (int)(w * 0.62);
+    int legGap = 16, legW = (int)(w * 0.18);
+    int mapW = w - legW - legGap;
     int cellW = (mapW - (cols - 1) * gap) / cols;
     int mapY = barY + 26;
     for (int r = 0; r < rows; r++) {
@@ -822,14 +850,14 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     }
     int mapH = rows * (cellH + gap) - gap;
 
-    int legX = x0 + mapW + 20, legW = w - mapW - 20;
+    int legX = x0 + mapW + legGap;
     int legRowH = mapH / 7;
     for (int i = 1; i <= 7; i++) {
         int ly = mapY + (i - 1) * legRowH;
-        fill_rounded(legX, ly, legW, legRowH - 4, 8, C_PANEL);
-        fill_rounded(legX + 8, ly + (legRowH - 4) / 2 - 8, 16, 16, 4, hist_color(i));
+        fill_rounded(legX, ly, legW, legRowH - 4, 6, C_PANEL);
+        fill_rounded(legX + 6, ly + (legRowH - 4) / 2 - 7, 14, 14, 3, hist_color(i));
         char key[4]; snprintf(key, sizeof(key), "h%d", i);
-        draw_text(fit(tr(key, ""), (legW - 36) / g_cellW), legX + 32, ly + (legRowH - 4) / 2 + 7, C_TEXT, C_PANEL);
+        draw_text(fit(tr(key, ""), (legW - 26) / g_cellW), legX + 24, ly + (legRowH - 4) / 2 + 7, C_TEXT, C_PANEL);
     }
 
     int statY = mapY + mapH + 20;
@@ -847,6 +875,23 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
         fill_rounded(cx, cy, sw - 10, 48, 10, C_PANEL);
         draw_text(fit(stats[i].k, (sw - 24) / g_cellW), cx + 12, cy + 20, C_DIM, C_PANEL);
         draw_text(fit(stats[i].v, (sw - 24) / g_cellW), cx + 12, cy + 42, C_TEXT, C_PANEL);
+    }
+
+    // Журнал службы (как на веб-странице) - под плитками статистики, до низа панели.
+    int logY = statY + 2 * 56 + 16;
+    int logH = 996 - logY;
+    if (logH > 40) {
+        fill_rounded(x0, logY, w, logH, 10, C_PANEL);
+        draw_text(tr("log", "Log"), x0 + 14, logY + 24, C_DIM, C_PANEL);
+        int lineH = 22;
+        int maxLines = (logH - 34) / lineH; if (maxLines < 0) maxLines = 0;
+        std::vector<std::string> lines = last_lines(g_logText, (size_t)maxLines);
+        int chars = (w - 28) / g_cellW;
+        int ly = logY + 24 + lineH;
+        for (size_t i = 0; i < lines.size(); i++) {
+            draw_text(fit(lines[i], chars), x0 + 14, ly, C_DIMMER, C_PANEL);
+            ly += lineH;
+        }
     }
 }
 
@@ -942,7 +987,7 @@ static void draw_all(uint64_t now)
         } else if (!d) {
             draw_text(tr("pick_disk", "Select a disk above and press Cross"), MARGIN_X, bodyY + 30, C_DIM, C_BG);
         } else {
-            const int leftW = 840, gapX = 40;
+            const int leftW = 960, gapX = 24;   // шире SMART-панель, уже промежуток между панелями
             int rightX = MARGIN_X + leftW + gapX;
             int rightW = FRAME_WIDTH - rightX - MARGIN_X;
             bool mineRunning = g_state.scan.present && g_state.job == "scan" && g_state.scan.disk == d->id;
@@ -1033,22 +1078,35 @@ static unsigned pad_read()
 
 // Системная клавиатура PS4 (IME Dialog) для полей "от"/"до" в ГБ: предзаполняем текущим значением,
 // после подтверждения (ORBIS_DIALOG_OK) разбираем введённое число обратно в out.
-// ВНИМАНИЕ: нигде в доступных примерах/репозиториях не нашлось готового рабочего использования
-// sceImeDialogInit - реализовано только по заголовочным файлам OpenOrbis, на консоли не проверялось.
-// Если диалог поведёт себя не так, как ожидается (не откроется, зависнет), может потребоваться
-// закрыть приложение или перезапустить консоль.
+//
+// ВАЖНО (нашлось при проверке - клавиатура открывалась, но с пустым полем и введённое не
+// передавалось обратно): поле inputTextBuffer в заголовках объявлено как wchar_t*, но на этой
+// платформе (FreeBSD/PS4 ABI) sizeof(wchar_t)==4, а системная клавиатура работает с UTF-16
+// (2 байта на символ) - так же, как это обходит реальное рабочее PS4-приложение с таким же
+// диалогом (bucanero/apollo-ps4: держит буфер как uint16_t[], а в структуру отдаёт его же,
+// приведённый к (wchar_t*)). Раньше здесь был честный wchar_t[32] с swprintf/swscanf (4 байта
+// на символ) - система писала/читала его как массив UTF-16 (2 байта), из-за несовпадения
+// размера элемента буфер эффективно читался/писался невпопад: отсюда пустое поле при открытии
+// и то, что введённое не доходило до out. Сейчас буфер - uint16_t[], заполняется и разбирается
+// вручную (цифры ASCII совпадают с их кодами UTF-16, поэтому конвертировать можно напрямую).
 static bool keyboard_edit_number(const std::string& title, uint64_t current, uint64_t maxVal, uint64_t& out)
 {
     if (!g_imeReady) { logf_("ui: ime dialog not ready, skip keyboard"); return false; }
 
-    wchar_t buf[32];
-    wchar_t wtitle[64];
+    uint16_t buf[32];
+    uint16_t wtitle[64];
     memset(buf, 0, sizeof(buf));
     memset(wtitle, 0, sizeof(wtitle));
-    swprintf(buf, 32, L"%llu", (unsigned long long)current);
+
+    char digits[32];
+    snprintf(digits, sizeof(digits), "%llu", (unsigned long long)current);
+    size_t dn = strlen(digits);
+    if (dn > 31) dn = 31;
+    for (size_t i = 0; i < dn; i++) buf[i] = (uint16_t)(unsigned char)digits[i];
+
     size_t tn = title.size();
     if (tn > 63) tn = 63;
-    for (size_t i = 0; i < tn; i++) wtitle[i] = (wchar_t)(unsigned char)title[i]; // заголовок - только ASCII
+    for (size_t i = 0; i < tn; i++) wtitle[i] = (uint16_t)(unsigned char)title[i]; // заголовок - только ASCII
 
     OrbisImeDialogSetting setting;
     memset(&setting, 0, sizeof(setting));
@@ -1060,13 +1118,13 @@ static bool keyboard_edit_number(const std::string& title, uint64_t current, uin
     setting.filter = NULL;
     setting.option = 0;
     setting.maxTextLength = 10;
-    setting.inputTextBuffer = buf;
+    setting.inputTextBuffer = (wchar_t*)buf;      // поле типа wchar_t*, но реально UTF-16 (см. выше)
     setting.posx = (float)(FRAME_WIDTH / 2);
     setting.posy = (float)(FRAME_HEIGHT / 2);
     setting.horizontalAlignment = ORBIS_H_CENTER;
     setting.verticalAlignment = ORBIS_V_CENTER;
     setting.placeholder = NULL;
-    setting.title = wtitle;
+    setting.title = (const wchar_t*)wtitle;
 
     if (sceImeDialogInit(&setting, NULL) != 0) { logf_("ui: sceImeDialogInit failed"); return false; }
 
@@ -1087,10 +1145,15 @@ static bool keyboard_edit_number(const std::string& title, uint64_t current, uin
         OrbisDialogResult res;
         memset(&res, 0, sizeof(res));
         if (sceImeDialogGetResult(&res) == 0 && res.endstatus == ORBIS_DIALOG_OK) {
-            unsigned long long v = 0;
-            if (swscanf(buf, L"%llu", &v) == 1) {
+            uint64_t v = 0;
+            bool any = false;
+            for (int i = 0; i < 32 && buf[i] != 0; i++) {
+                uint16_t c = buf[i];
+                if (c >= '0' && c <= '9') { v = v * 10 + (uint64_t)(c - '0'); any = true; }
+            }
+            if (any) {
                 if (v > maxVal) v = maxVal;
-                out = (uint64_t)v;
+                out = v;
                 ok = true;
             }
         }
