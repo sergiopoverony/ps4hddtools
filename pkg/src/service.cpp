@@ -7,11 +7,21 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 const char* SERVICE_HOST = "127.0.0.1";
 const int   SERVICE_PORT = 8686;
 static const int LOADER_PORT = 9090;
 static const char* PAYLOAD_PATH = "/app0/assets/misc/ps4hddtools.elf";
+
+// Папка автозапуска GoldHEN (AutoRun в payloads.ini) и файл конфига - именно так, как это
+// устроено у самого GoldHEN для других payload'ов (подтверждено пользователем по его реальному
+// payloads.ini: "/user/data/payloads/<имя>.elf = 1" под секцией [AutoRun], сам файл конфига -
+// "/data/GoldHEN/payloads.ini"). Путь до самого payload-файла взят буквально таким же, каким
+// он должен быть виден GoldHEN (который видит файловую систему не из нашего сэндбокса) - поэтому
+// тут не переиспользуется "/data/..." (как для своих логов) на случай, если это разные алиасы.
+static const char* AUTORUN_ELF_PATH = "/user/data/payloads/ps4hddtools.elf";
+static const char* AUTORUN_INI_PATH = "/data/GoldHEN/payloads.ini";
 
 bool service_query(std::string& version, bool& busy)
 {
@@ -22,6 +32,69 @@ bool service_query(std::string& version, bool& busy)
     version = j["v"].asStr();
     busy = j["job"].asStr("idle") != "idle";
     return !version.empty();
+}
+
+// Устанавливает payload в папку автозапуска GoldHEN (AutoRun) и прописывает его в payloads.ini,
+// чтобы служба поднималась сама через несколько секунд после активации GoldHEN, даже если
+// пользователь само приложение (эту программу) ещё не открывал - раньше это считалось
+// невозможным, но пользователь прислал реальный пример payloads.ini с работающим AutoRun у
+// других payload'ов, поэтому делаем ровно так же.
+// Файл копируется заново при каждом запуске приложения (чтобы на диске всегда была та же
+// версия, что в текущем PKG) - это недорогая операция (копия ELF, несколько сотен КБ).
+// Строка в payloads.ini добавляется только один раз: если она там уже есть (включена - "= 1"
+// или сам пользователь выключил - "= 0"), файл конфига не трогаем - это его осознанный выбор.
+bool service_install_autorun(std::string& err)
+{
+    FILE* f = fopen(PAYLOAD_PATH, "rb");
+    if (!f) { err = "no payload file in PKG"; logf_("autorun: cannot open %s", PAYLOAD_PATH); return false; }
+    std::string data;
+    char buf[16384];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.append(buf, n);
+    fclose(f);
+    if (data.size() < 1024) { err = "payload file is empty"; return false; }
+
+    mkdir("/user/data", 0777);
+    mkdir("/user/data/payloads", 0777);
+    FILE* out = fopen(AUTORUN_ELF_PATH, "wb");
+    if (!out) { err = std::string("cannot write ") + AUTORUN_ELF_PATH; logf_("autorun: %s", err.c_str()); return false; }
+    size_t wn = fwrite(data.data(), 1, data.size(), out);
+    fclose(out);
+    if (wn != data.size()) { err = "autorun payload write incomplete"; logf_("autorun: %s", err.c_str()); return false; }
+
+    std::string ini;
+    FILE* fi = fopen(AUTORUN_INI_PATH, "rb");
+    if (fi) {
+        char ibuf[4096];
+        size_t rn;
+        while ((rn = fread(ibuf, 1, sizeof(ibuf), fi)) > 0) ini.append(ibuf, rn);
+        fclose(fi);
+    }
+
+    if (ini.find(AUTORUN_ELF_PATH) != std::string::npos) {
+        logf_("autorun: payload copied, payloads.ini already has an entry for it - leaving as is");
+        return true;
+    }
+
+    std::string entry = std::string(AUTORUN_ELF_PATH) + " = 1\n";
+    size_t sec = ini.find("[AutoRun]");
+    if (sec == std::string::npos) {
+        if (!ini.empty() && ini.back() != '\n') ini += "\n";
+        if (!ini.empty()) ini += "\n";
+        ini += "[AutoRun]\n";
+        ini += entry;
+    } else {
+        size_t lineEnd = ini.find('\n', sec);
+        size_t insertAt = (lineEnd == std::string::npos) ? ini.size() : lineEnd + 1;
+        ini.insert(insertAt, entry);
+    }
+
+    FILE* fw = fopen(AUTORUN_INI_PATH, "wb");
+    if (!fw) { err = std::string("cannot write ") + AUTORUN_INI_PATH; logf_("autorun: %s", err.c_str()); return false; }
+    fwrite(ini.data(), 1, ini.size(), fw);
+    fclose(fw);
+    logf_("autorun: payload installed and registered in payloads.ini");
+    return true;
 }
 
 // connectFailed (если указан) ставится в true только тогда, когда не удалось именно подключиться
