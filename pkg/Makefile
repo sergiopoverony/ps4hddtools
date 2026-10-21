@@ -1,6 +1,13 @@
 # Сборка PKG приложения PS4 HDD Tools (оболочка для службы ps4hddtools).
 # Нужен OpenOrbis PS4 Toolchain и переменная OO_PS4_TOOLCHAIN. Сборка: make (в этой папке).
 # Перед сборкой соберите службу в корне проекта (make), чтобы был ../release/ps4hddtools.elf.
+#
+# Частая ошибка - после правки версии/кода службы собрать только тут (make) и получить PKG
+# со старым (не пересобранным) payload внутри, хотя сам интерфейс приложения уже новый.
+# Чтобы собрать и службу, и приложение одной командой и гарантированно свежими:
+#   make full
+# (нужен и PS4_PAYLOAD_SDK для службы в корне проекта, и OO_PS4_TOOLCHAIN для этой сборки -
+# оба должны быть экспортированы заранее, как обычно).
 
 # PkgTool.Core работает на .NET: без этих настроек он падает, если в системе нет библиотеки ICU,
 # или ругается на версию .NET.
@@ -110,3 +117,15 @@ $(INTDIR)/%.o: $(PROJDIR)/%.cpp
 
 clean:
 	rm -rf $(CONTENT_ID).pkg pkg.gp4 eboot.bin build sce_sys sce_module assets/misc/ps4hddtools.elf
+
+# Собирает службу в корне проекта (нужен PS4_PAYLOAD_SDK), копирует её в ../release/ps4hddtools.elf
+# (руками так легко забыть - именно это и было причиной рассинхрона версий), затем чисто
+# пересобирает сам PKG. Используйте это вместо простого "make", когда меняли код/версию.
+.PHONY: full
+full:
+	$(MAKE) -C ..
+	cp ../build/ps4hddtools.elf ../release/ps4hddtools.elf
+	$(MAKE) clean
+	$(MAKE) all
+
+.PHONY: all clean

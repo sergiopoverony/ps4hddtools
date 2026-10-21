@@ -22,9 +22,16 @@
 
 ## Сборка
 
-Нужен [OpenOrbis PS4 Toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) и переменная `OO_PS4_TOOLCHAIN` (как для ps4torrent client).
+Нужен [OpenOrbis PS4 Toolchain](https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain) и переменная `OO_PS4_TOOLCHAIN` (как для ps4torrent client), а для сборки самой службы (в корне проекта) - `ps4-payload-sdk` и переменная `PS4_PAYLOAD_SDK`.
 
-1. В корне проекта соберите службу: `make` (нужен ps4-payload-sdk) и положите результат в `release/ps4hddtools.elf` (в репозитории там уже лежит готовая версия).
+**Проще всего** (собирает и службу, и приложение одной командой, без риска получить PKG со старым payload внутри):
+```
+cd pkg
+make full
+```
+
+Либо руками по шагам (если нужно собрать только что-то одно):
+1. В корне проекта соберите службу: `make` (нужен ps4-payload-sdk) и скопируйте результат в `release/ps4hddtools.elf`: `cp build/ps4hddtools.elf release/ps4hddtools.elf` (в репозитории там уже лежит какая-то версия - **легко забыть обновить её** после правок в службе/версии, тогда PKG соберётся с новым интерфейсом, но со старым payload внутри - версии разойдутся).
 2. В папке `pkg/` выполните `make`. Получится `IV0000-BREW00089_00-PS4HDDTOOLS00000.pkg`.
 3. Установите PKG на консоль (GoldHEN).
 
