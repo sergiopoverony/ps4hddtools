@@ -23,9 +23,15 @@ EXTRAFLAGS  := -O2
 # Версия приложения = версия службы (из ../src/version.h): приложение сравнивает их при запуске.
 APPVER      := $(shell sed -n 's/.*APP_VERSION "\(.*\)".*/\1/p' ../src/version.h)
 
+# Переводы общие с веб-страницей службы: файлы лежат в ../lang/lang_<код>.json. Сборка копирует
+# их в assets/misc/ и добавляет languages.json (список языков, делает tools/langs.py). Новый язык
+# = новый файл ../lang/lang_<код>.json, этот Makefile менять не нужно.
+LANGSRC     := $(wildcard ../lang/lang_*.json)
+LANGDST     := $(patsubst ../lang/%,assets/misc/%,$(LANGSRC)) assets/misc/languages.json
+
 ASSETS      := assets/fonts/DejaVuSansMono.ttf assets/fonts/LICENSE-DejaVu.txt assets/images/title.png \
                assets/images/qr_sbp.png assets/images/qr_paypal.png \
-               assets/misc/lang_en.json assets/misc/lang_ru.json assets/misc/ps4hddtools.elf
+               $(LANGDST) assets/misc/ps4hddtools.elf
 
 # Системные модули для приложения (без libc.prx приложение сразу вылетает). Берутся из набора OpenOrbis.
 LIBMODULES  := sce_module/libc.prx sce_module/libSceFios2.prx
@@ -78,6 +84,12 @@ sce_module/%.prx:
 	if [ -z "$$src" ]; then echo "Не найден $*.prx в $(TOOLCHAIN). Скопируйте его вручную в pkg/sce_module/"; exit 1; fi; \
 	echo "cp $$src $@"; cp "$$src" $@
 
+assets/misc/lang_%.json: ../lang/lang_%.json
+	cp $< $@
+
+assets/misc/languages.json: $(LANGSRC) ../tools/langs.py
+	python3 ../tools/langs.py ../lang $@
+
 # Служба берётся из корня проекта.
 assets/misc/ps4hddtools.elf: ../release/ps4hddtools.elf
 	cp $< $@
@@ -116,7 +128,7 @@ $(INTDIR)/%.o: $(PROJDIR)/%.cpp
 	$(CCX) $(CXXFLAGS) -o $@ $<
 
 clean:
-	rm -rf $(CONTENT_ID).pkg pkg.gp4 eboot.bin build sce_sys sce_module assets/misc/ps4hddtools.elf
+	rm -rf $(CONTENT_ID).pkg pkg.gp4 eboot.bin build sce_sys sce_module assets/misc/ps4hddtools.elf assets/misc/lang_*.json assets/misc/languages.json
 
 # Собирает службу в корне проекта (нужен PS4_PAYLOAD_SDK), копирует её в ../release/ps4hddtools.elf
 # (руками так легко забыть - именно это и было причиной рассинхрона версий), затем чисто

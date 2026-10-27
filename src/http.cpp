@@ -55,6 +55,16 @@ static void respond(int fd, int code, const char* ctype, const char* body, size_
 static void respond_json(int fd, int code, const std::string& s) { respond(fd, code, "application/json", s.data(), s.size()); }
 static void respond_err(int fd, int code, const char* e) { respond_json(fd, code, std::string("{\"error\":\"") + e + "\"}"); }
 
+// Файл перевода по пути вида "/lang/ru.json". Сравнение по таблице встроенных файлов
+// (никаких путей на диске), поэтому выйти за пределы набора нельзя.
+static const LangAsset* find_lang(const std::string& path) {
+    if (path.size() < 12 || path.compare(0, 6, "/lang/") != 0 || path.compare(path.size() - 5, 5, ".json") != 0) return nullptr;
+    std::string code = path.substr(6, path.size() - 11);
+    for (int i = 0; i < ASSET_LANGS_N; i++)
+        if (code == ASSET_LANGS[i].code) return &ASSET_LANGS[i];
+    return nullptr;
+}
+
 static std::string json_str(const std::string& body, const char* key) {
     std::string k = std::string("\"") + key + "\"";
     size_t p = body.find(k);
@@ -132,6 +142,10 @@ static void handle(int fd) {
             respond(fd, 200, "image/png", (const char*)ASSET_QR_PNG, ASSET_QR_PNG_LEN, true);
         else if (path == "/favicon.png" || path == "/favicon.ico")
             respond(fd, 200, "image/png", (const char*)ASSET_ICON_PNG, ASSET_ICON_PNG_LEN, true);
+        else if (path == "/lang/index.json")
+            respond(fd, 200, "application/json; charset=utf-8", (const char*)ASSET_LANG_INDEX, ASSET_LANG_INDEX_LEN);
+        else if (const LangAsset* la = find_lang(path))
+            respond(fd, 200, "application/json; charset=utf-8", (const char*)la->data, la->len);
         else if (path == "/api/state") respond_json(fd, 200, engine_state_json());
         else if (path == "/api/sig") respond_json(fd, 200, engine_sig_json());
         else if (path == "/api/disks") respond_json(fd, 200, engine_disks_json());

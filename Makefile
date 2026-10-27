@@ -29,7 +29,7 @@ CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -pthread -lSceSystemService -lSceNetCtl
 
 all: $(TARGET)
 
-$(ASSETS): web/index.html assets/title.png assets/icon.png assets/qr_sbp.png assets/qr_paypal.png src/version.h tools/embed.py
+$(ASSETS): web/index.html assets/title.png assets/icon.png assets/qr_sbp.png assets/qr_paypal.png src/version.h tools/embed.py $(wildcard lang/lang_*.json)
 	mkdir -p build
 	python3 tools/embed.py $(ASSETS)
 

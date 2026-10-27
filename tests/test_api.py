@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Тест веб-API на ПК (HOST_TEST + ASAN). Запуск: python3 tests/test_api.py build/host_test"""
-import json, os, shutil, socket, subprocess, sys, time, urllib.request, urllib.error
+import json, os, re, shutil, socket, subprocess, sys, time, urllib.request, urllib.error
 
 BIN = sys.argv[1]
 ROOT = '/tmp/hddtest'
 PORT = 18686
 H = {'X-Requested-With': 'ps4hdd', 'Content-Type': 'application/json'}
 fails = []
+# Версия берётся из src/version.h: тест не нужно править при каждом повышении версии.
+VER = re.search(r'APP_VERSION\s+"([^"]+)"', open('src/version.h').read()).group(1)
 
 def check(name, cond, extra=''):
     print(('PASS ' if cond else 'FAIL ') + name + (' ' + str(extra) if not cond else ''))
@@ -45,7 +47,7 @@ def wait_idle(limit=60):
 # ---------- 1. SMART и диски
 p = start(cfg='{"realloc":3}')
 s = json.loads(get('/api/state'))
-check('state: версия 1.2.0.12', s['v'] == '1.2.0.12' and s['job'] == 'idle' and not s['loaded'])
+check('state: версия ' + VER, s['v'] == VER and s['job'] == 'idle' and not s['loaded'])
 check('в покое диски не читаются', json.loads(get('/api/disks'))['disks'] == [])
 check('POST без заголовка отклонён', post('/api/refresh', headers={'Content-Type': 'text/plain'})[0] == 403)
 check('refresh принят', post('/api/refresh')[0] == 200)
@@ -60,10 +62,20 @@ check('вердикт «внимание» из-за 3 переназначен�
 check('пороги прочитаны', any(a['id'] == 5 and a['t'] == 10 for a in sm['attrs']))
 check('статус исправен', sm['status'] == 0)
 check('rpm 5400', sm['rpm'] == 5400)
-check('index.html отдаётся и версия подставлена', b'1.2.0.12' in get('/') and b'__VERSION__' not in get('/'))
+check('index.html отдаётся и версия подставлена', VER.encode() in get('/') and b'__VERSION__' not in get('/'))
 check('logo/favicon PNG', get('/logo.png')[:4] == b'\x89PNG' and get('/favicon.ico')[:4] == b'\x89PNG')
 check('qr.png и qr_paypal.png отдаются', get('/qr.png')[:4] == b'\x89PNG' and get('/qr_paypal.png')[:4] == b'\x89PNG')
-check('log отдаётся', b'version 1.2.0.12' in get('/api/log'))
+def status_of(path):
+    try: return urllib.request.urlopen('http://127.0.0.1:%d%s' % (PORT, path), timeout=10).status
+    except urllib.error.HTTPError as e: return e.code
+idx = json.loads(get('/lang/index.json'))
+check('lang/index.json: английский и русский первыми', [x['code'] for x in idx[:2]] == ['en', 'ru'] and idx[0]['name'] == 'English', idx[:2])
+en_keys = set(json.loads(get('/lang/en.json')))
+for x in idx:
+    d = json.loads(get('/lang/%s.json' % x['code']))
+    check('lang/%s.json отдаётся, _name совпадает, ключи как в en' % x['code'], d.get('_name') == x['name'] and en_keys <= set(d) | {k for k in en_keys if k.startswith('an_')})
+check('lang: неизвестный язык и обход пути -> 404', status_of('/lang/xx.json') == 404 and status_of('/lang/../etc/passwd.json') == 404 and status_of('/lang/.json') == 404)
+check('log отдаётся', ('version ' + VER).encode() in get('/api/log'))
 
 # ---------- слежение за сменой дисков
 sig0 = json.loads(get('/api/sig'))['sig']

@@ -131,7 +131,7 @@ header{flex-direction:column;align-items:stretch}
   <button class="ghost menu" id="btnMenu" aria-expanded="false"><span class="bars"><i></i><i></i><i></i></span></button>
   <div class="hbar" id="hbar">
     <button class="ghost" id="btnRefresh" data-i="refresh"></button>
-    <select id="lang"><option value="ru">Русский</option><option value="en">English</option></select>
+    <select id="lang"></select>
     <button class="ghost green" id="btnDonate" data-i="donate"></button>
     <button class="ghost danger" id="btnQuit" data-i="quit"></button>
   </div>
@@ -170,68 +170,16 @@ header{flex-direction:column;align-items:stretch}
 
 <script>
 const VERSION='__VERSION__';
-const T={
-ru:{refresh:'Обновить диски',quit:'Выключить',scanTitle:'Проверка поверхности',from:'С (ГБ)',to:'По (ГБ)',whole:'Весь диск',
-menu:'Меню',support:'Поддержать СБП',donate:'Поддержать',start:'Старт',pause:'Пауза',resume:'Продолжить',stop:'Стоп',log:'Журнал',logRefresh:'Обновить журнал',
-loading:'Читаю диски и SMART…',noDisks:'Диски не найдены',notRead:'SMART не прочитан',noSmart:'SMART недоступен',noSmartHint:'Этот диск не отдаёт SMART (часто так у USB-корпусов). Проверка поверхности доступна.',
-v0:'Здоров',v1:'Внимание',v2:'Плохо',vn:'Нет данных',health:'Состояние',temp:'Температура',
-fw:'Прошивка',serial:'Серийный номер',iface:'Интерфейс',rot:'Скорость вращения',ssd:'SSD',rpm:'об/мин',
-hr:'Всего прочитано',hw:'Всего записано',cycles:'Включений',poh:'Часов работы',cap:'Ёмкость',path:'Устройство',
-attrs:'Показатели SMART',id:'ID',name:'Название',cur:'Текущее',worst:'Худшее',thr:'Порог',raw:'Сырое',
-r_status_fail:'Диск сообщает о скором отказе (SMART RETURN STATUS). Срочно сохраните данные.',
-r_thr:'Показатель «{n}» упал до порога или ниже (значение {v}).',
-r_attr:'{n}: {v}',r_temp:'Высокая температура: {v} °C',ok:'Критичных показателей не обнаружено.',
-idle:'Готово к проверке. Проверка только читает данные, ничего не записывает.',
-bench:'Замер скорости чтения…',refreshing:'Читаю диски и SMART…',
-running:'Идёт проверка поверхности…',paused:'Пауза',stopping:'Останавливаю…',
-m_done_ok:'Проверка завершена: ошибок чтения нет.',m_done_errors:'Проверка завершена: найдены ошибки чтения.',
-m_stopped:'Проверка остановлена.',m_open_failed:'Не удалось открыть диск.',m_device_lost:'Диск перестал отвечать, проверка прервана.',
-speed:'Скорость',elapsed:'Прошло',left:'Осталось',pos:'Позиция',bad:'Плохих секторов',prog:'Выполнено',
-approx:'(оценка: часть блока не проверена по секторам)',badLba:'Проблемные сектора (LBA):',
-h1:'до 4 мс',h2:'до 16 мс',h3:'до 40 мс',h4:'до 160 мс',h5:'до 480 мс',h6:'дольше 480 мс',h7:'ошибка чтения',
-cTitle:'Запустить проверку диска {d}?',
-cBody:'Будет прочитано {gb} ГБ (с {f} по {t} ГБ). Ожидаемое время: примерно {time} при скорости около {sp} МБ/с. Реальное время может отличаться: скорость падает к концу диска и при ошибках чтения.',
-cWarn:'Диск и консоль будут сильно нагружены, игры и меню могут тормозить. Пока идёт проверка, консоль не уйдёт в спящий режим. Данные не изменяются.',
-cYes:'Начать проверку',cNo:'Отмена',estFail:'Не удалось измерить скорость диска.',
-quitQ:'Выключить ps4hddtools? Чтобы запустить снова, отправьте payload ещё раз (или перезапустите консоль, если он в автозагрузке).',
-qYes:'Выключить',stopQ:'Остановить проверку?',sYes:'Остановить',bye:'ps4hddtools выключен. Страницу можно закрыть.',
-busy:'Сейчас выполняется другая операция.',bad_range:'Неверный диапазон.',err:'Ошибка запроса',noconn:'Нет связи с консолью',lost:'Связь потеряна: возможно, программа была перезапущена. Обновите страницу.',
-h:'ч',m:'мин',s:'с',gb:'ГБ',tb:'ТБ',diskN:'Диск',
-an:{5:'Переназначенные секторы',197:'Ожидают переназначения',198:'Неисправимые секторы',196:'Событий переназначения',10:'Повторы раскрутки',187:'Неисправимые ошибки',199:'Ошибки CRC интерфейса'}},
-en:{refresh:'Refresh disks',quit:'Shut down',scanTitle:'Surface scan',from:'From (GB)',to:'To (GB)',whole:'Whole disk',
-menu:'Menu',support:'Donate PayPal',donate:'Donate',start:'Start',pause:'Pause',resume:'Resume',stop:'Stop',log:'Log',logRefresh:'Refresh log',
-loading:'Reading disks and SMART…',noDisks:'No disks found',notRead:'SMART not read',noSmart:'SMART unavailable',noSmartHint:'This disk does not provide SMART (common with USB enclosures). Surface scan is available.',
-v0:'Healthy',v1:'Caution',v2:'Bad',vn:'No data',health:'Health',temp:'Temperature',
-fw:'Firmware',serial:'Serial number',iface:'Interface',rot:'Rotation rate',ssd:'SSD',rpm:'rpm',
-hr:'Total host reads',hw:'Total host writes',cycles:'Power cycles',poh:'Power-on hours',cap:'Capacity',path:'Device',
-attrs:'SMART attributes',id:'ID',name:'Name',cur:'Current',worst:'Worst',thr:'Thresh',raw:'Raw',
-r_status_fail:'The drive reports imminent failure (SMART RETURN STATUS). Back up your data now.',
-r_thr:'Attribute "{n}" dropped to or below its threshold (value {v}).',
-r_attr:'{n}: {v}',r_temp:'High temperature: {v} °C',ok:'No critical indicators found.',
-idle:'Ready. The scan only reads data and never writes.',
-bench:'Measuring read speed…',refreshing:'Reading disks and SMART…',
-running:'Scanning the surface…',paused:'Paused',stopping:'Stopping…',
-m_done_ok:'Scan finished: no read errors.',m_done_errors:'Scan finished: read errors found.',
-m_stopped:'Scan stopped.',m_open_failed:'Could not open the disk.',m_device_lost:'The disk stopped responding; scan aborted.',
-speed:'Speed',elapsed:'Elapsed',left:'Remaining',pos:'Position',bad:'Bad sectors',prog:'Progress',
-approx:'(estimate: part of a block was not checked sector by sector)',badLba:'Problem sectors (LBA):',
-h1:'up to 4 ms',h2:'up to 16 ms',h3:'up to 40 ms',h4:'up to 160 ms',h5:'up to 480 ms',h6:'over 480 ms',h7:'read error',
-cTitle:'Start scanning disk {d}?',
-cBody:'{gb} GB will be read (from {f} to {t} GB). Expected time: about {time} at roughly {sp} MB/s. The real time may differ: speed drops toward the end of the disk and on read errors.',
-cWarn:'The disk and the console will be heavily loaded; games and menus may lag. The console will not go to sleep while the scan runs. No data is modified.',
-cYes:'Start scan',cNo:'Cancel',estFail:'Could not measure the disk speed.',
-quitQ:'Shut down ps4hddtools? To start it again, send the payload again (or restart the console if it is in autoload).',
-qYes:'Shut down',stopQ:'Stop the scan?',sYes:'Stop',bye:'ps4hddtools has shut down. You can close this page.',
-busy:'Another operation is running.',bad_range:'Invalid range.',err:'Request failed',noconn:'No connection to the console',lost:'Connection lost: the program may have been restarted. Reload the page.',
-h:'h',m:'min',s:'s',gb:'GB',tb:'TB',diskN:'Disk',
-an:{}}};
-let lang=(()=>{try{const s=localStorage.getItem('lang');if(s&&T[s])return s}catch(e){}return (navigator.language||'en').toLowerCase().startsWith('ru')?'ru':'en'})();
+// Переводы лежат в lang/lang_<код>.json (общие с приложением PKG), служба отдаёт их по /lang/<код>.json.
+// L - выбранный язык, LEN - английский (запасной вариант для ключей, которых нет в выбранном).
+let L={},LEN={},LANGS=[],lang='en';
 const $=id=>document.getElementById(id);
-const t=(k,p)=>{let s=(T[lang][k]??T.en[k]??k);if(p)for(const x in p)s=s.split('{'+x+'}').join(p[x]);return s};
+const t=(k,p)=>{let s=(L[k]??LEN[k]??k);if(p)for(const x in p)s=s.split('{'+x+'}').join(p[x]);return s};
 let diskSig='',sigPending='',disks=[],sel='',st=null,timer=null,loadedOnce=false,busyLocal=false;
 
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
-const nf=(n,d=0)=>Number(n).toLocaleString(lang==='ru'?'ru-RU':'en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const nf=(n,d=0)=>{const o={minimumFractionDigits:d,maximumFractionDigits:d};try{return Number(n).toLocaleString(lang,o)}catch(e){return Number(n).toLocaleString('en-US',o)}};
+const anName=id=>L['an_'+id]||'';   // имена SMART-атрибутов: перевод есть не во всех языках, иначе имя из самого диска
 function fmtGB(b){return nf(b/1e9,1)+' '+t('gb')}
 function fmtBytes(b){if(b<0)return '—';const tb=b/1e12;return tb>=1?nf(tb,2)+' '+t('tb'):nf(b/1e9,1)+' '+t('gb')}
 function fmtTime(sec){if(sec<0||!isFinite(sec))return '—';sec=Math.round(sec);const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return h?`${h} ${t('h')} ${m} ${t('m')}`:m?`${m} ${t('m')} ${s} ${t('s')}`:`${s} ${t('s')}`}
@@ -308,7 +256,7 @@ function renderLeft(){
   const ul=el('ul','reasons');
   if(!s.reasons.length&&s.verdict===0){const li=el('li','s0',t('ok'));ul.appendChild(li)}
   s.reasons.forEach(r=>{
-    const name=(T[lang].an&&T[lang].an[r.id])||(s.attrs.find(a=>a.id===r.id)||{}).n||String(r.id);
+    const name=anName(r.id)||(s.attrs.find(a=>a.id===r.id)||{}).n||String(r.id);
     let txt;
     if(r.c==='status_fail')txt=t('r_status_fail');else if(r.c==='thr')txt=t('r_thr',{n:name,v:r.v});
     else if(r.c==='temp')txt=t('r_temp',{v:r.v});else txt=t('r_attr',{n:name,v:nf(r.v)});
@@ -322,7 +270,7 @@ function renderLeft(){
   const body=el('tbody');
   s.attrs.forEach(a=>{
     const tr=el('tr');const c0=el('td');c0.appendChild(el('i','ad s'+a.s));c0.appendChild(document.createTextNode(a.id.toString(16).toUpperCase().padStart(2,'0')));
-    tr.appendChild(c0);tr.appendChild(el('td','',(T[lang].an&&T[lang].an[a.id])||a.n));
+    tr.appendChild(c0);tr.appendChild(el('td','',anName(a.id)||a.n));
     tr.appendChild(el('td','',a.c));tr.appendChild(el('td','',a.w));tr.appendChild(el('td','',a.t||'—'));
     tr.appendChild(el('td','mono',a.rx));body.appendChild(tr);
   });
@@ -355,7 +303,7 @@ function renderRight(){
   const stt=$('stats');stt.textContent='';
   const add=(k,v)=>{const d=el('div','stat');d.appendChild(el('label','',k));d.appendChild(el('b','',v));stt.appendChild(d)};
   add(t('prog'),nf(p,1)+' %');
-  add(t('speed'),mine&&sc.speed>0?nf(sc.speed/1e6,1)+' '+(lang==='ru'?'МБ/с':'MB/s'):'—');
+  add(t('speed'),mine&&sc.speed>0?nf(sc.speed/1e6,1)+' '+t('mbps'):'—');
   add(t('elapsed'),mine?fmtTime(sc.elapsed):'—');
   add(t('left'),mine&&job==='scan'&&sc.eta>=0?fmtTime(sc.eta):'—');
   add(t('pos'),mine?fmtGB(sc.from+sc.done):'—');
@@ -446,7 +394,29 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu()});
 $('hbar').addEventListener('click',e=>{if(e.target.tagName==='BUTTON'){document.querySelector('header').classList.remove('open');$('btnMenu').setAttribute('aria-expanded','false')}});
 $('btnLog').onclick=loadLog;
 $('btnQuit').onclick=async()=>{if(!await askModal(t('quitQ'),[],t('qYes'),t('cNo')))return;try{await api('/quit',{})}catch(e){}if(timer)clearInterval(timer);document.body.textContent=t('bye');document.body.style.padding='24px'};
-$('lang').onchange=e=>{lang=e.target.value;try{localStorage.setItem('lang',lang)}catch(x){}applyLang()};
+async function loadLang(code){
+  let d={};
+  if(code!=='en'){try{const r=await fetch('/lang/'+code+'.json');if(r.ok)d=await r.json()}catch(e){}}
+  L=d;lang=code;
+}
+// Какой язык показать при первом открытии: сохранённый выбор, затем язык браузера, затем английский.
+function pickLang(){
+  const have=c=>LANGS.some(x=>x.code===c);
+  try{const sv=localStorage.getItem('lang');if(sv&&have(sv))return sv}catch(e){}
+  const alias={nb:'no',nn:'no'};
+  for(const tag of (navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||'en'])){
+    const l=String(tag).toLowerCase();
+    if(have(l))return l;
+    const base=l.split('-')[0],b=alias[base]||base;
+    if(have(b))return b;
+  }
+  return 'en';
+}
+function fillLangSelect(){
+  const sel=$('lang');sel.textContent='';
+  for(const x of LANGS){const o=document.createElement('option');o.value=x.code;o.textContent=x.name;sel.appendChild(o)}
+}
+$('lang').onchange=async e=>{const c=e.target.value;try{localStorage.setItem('lang',c)}catch(x){}await loadLang(c);applyLang()};
 
 // Слежение за сменой дисков: раз в 5 с спрашиваем лёгкую подпись устройств (диски не читаются).
 // Если она изменилась и осталась такой же при следующем опросе (диск успел определиться), обновляем список.
@@ -461,6 +431,12 @@ setInterval(async()=>{
 },5000);
 
 (async function init(){
+  try{
+    LANGS=await (await fetch('/lang/index.json')).json();
+    LEN=await (await fetch('/lang/en.json')).json();
+    await loadLang(pickLang());
+    fillLangSelect();
+  }catch(e){}
   applyLang();
   try{
     st=await api('/api/state');

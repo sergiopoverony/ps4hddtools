@@ -5,3 +5,5 @@ pkg.gp4
 *.pkg
 assets/misc/ps4hddtools.elf
 sce_module/
+assets/misc/lang_*.json
+assets/misc/languages.json

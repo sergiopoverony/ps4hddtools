@@ -14,7 +14,7 @@ Version **1.2.0.12** · License **GPLv3** · Created by SergioPoverony and Mr.Cl
 - Surface scan: the whole drive or a range in GB. Before the scan starts, the speed is measured and the expected duration is shown; nothing starts without your confirmation.
 - Pause, resume and stop. A block map colours every block by read time and marks read errors in red. Below it: statistics, a list of problem sectors and a log.
 - The console does not go to sleep while a scan is running, even if you do not touch the controller.
-- Russian and English interface, dark theme, mobile-friendly layout.
+- 20 interface languages (English, Russian, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Czech, Hungarian, Romanian, Turkish, Greek, Ukrainian, Swedish, Danish, Norwegian, Finnish, Indonesian), dark theme, mobile-friendly layout. The language is picked from your browser (web page) or from the console's system language (PKG app) and can be changed in the menu.
 
 ## Good to know
 - Only **read** commands are sent to the drive. Nothing is ever written or erased.
@@ -40,8 +40,12 @@ make send PS4_HOST=192.168.0.24
 ```
 The SDK is [ps4-payload-dev/sdk](https://github.com/ps4-payload-dev/sdk). The version number lives in one place: `src/version.h`.
 
+### Languages
+The web page and the PKG app share one set of translation files: `lang/lang_<code>.json`. To add a language, copy `lang/lang_en.json` to `lang/lang_<code>.json`, translate the values and run `python3 tools/check_lang.py` (it checks keys, placeholders and that every character exists in the app's font). Nothing else needs to change. See `lang/README.md`.
+
 ### Tests on a PC
 ```
+python3 tools/check_lang.py
 python3 tools/embed.py build/assets_gen.h
 g++ -std=c++17 -g -pthread -fsanitize=address,undefined -DHOST_TEST \
     -DDEV_DIR='"/tmp/hddtest/dev"' -DDATA_DIR='"/tmp/hddtest/data"' \

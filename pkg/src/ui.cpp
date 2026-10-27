@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <wchar.h>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -524,8 +525,9 @@ static std::string fmt_size(uint64_t b)
 {
     char t[32];
     double g = (double)b / 1e9;
-    if (g >= 1000.0) snprintf(t, sizeof(t), "%.2f TB", g / 1000.0);
-    else snprintf(t, sizeof(t), "%.1f GB", g);
+    // Единицы - из файла перевода (ГБ/GB, ТБ/TB и т.д.), как на веб-странице.
+    if (g >= 1000.0) snprintf(t, sizeof(t), "%.2f %s", g / 1000.0, tr("tb", "TB").c_str());
+    else snprintf(t, sizeof(t), "%.1f %s", g, tr("gb", "GB").c_str());
     return t;
 }
 
@@ -543,10 +545,12 @@ static std::string fmt_time(double sec)
     if (sec < 0) return "—";
     long s = (long)(sec + 0.5);
     long h = s / 3600, m = (s % 3600) / 60, ss = s % 60;
-    char b[32];
-    if (h) snprintf(b, sizeof(b), "%ldч %ldмин", h, m);
-    else if (m) snprintf(b, sizeof(b), "%ldмин %ldс", m, ss);
-    else snprintf(b, sizeof(b), "%ldс", ss);
+    // Подписи единиц времени - из файла перевода (раньше были зашиты по-русски).
+    std::string uh = tr("h", "h"), um = tr("m", "min"), us = tr("s", "s");
+    char b[96];
+    if (h) snprintf(b, sizeof(b), "%ld %s %ld %s", h, uh.c_str(), m, um.c_str());
+    else if (m) snprintf(b, sizeof(b), "%ld %s %ld %s", m, um.c_str(), ss, us.c_str());
+    else snprintf(b, sizeof(b), "%ld %s", ss, us.c_str());
     return b;
 }
 
@@ -746,7 +750,7 @@ static void draw_screen_disk(const DiskView& d, int x0, int w, int y0)
     if (d.verdict == 0) { vt = tr("v0", "Healthy"); vc = C_GREEN; }
     else if (d.verdict == 1) { vt = tr("v1", "Caution"); vc = C_AMBER; }
     else if (d.verdict == 2) { vt = tr("v2", "Bad"); vc = C_RED; }
-    else vt = tr("vn", "No SMART");
+    else vt = tr("vnSmart", "No SMART");
     draw_text(vt, x0, y1, vc, C_BG);
     if (d.temp > 0) { char t[32]; snprintf(t, sizeof(t), "%d °C", d.temp); draw_text(t, x0 + 220, y1, C_DIM, C_BG); }
 
@@ -762,8 +766,12 @@ static void draw_screen_disk(const DiskView& d, int x0, int w, int y0)
     kv.push_back(KV{ tr("poh", "Power-on hours"), d.poh >= 0 ? fmt_num((uint64_t)d.poh) : "—" });
 
     int gy = y1 + 42;
-    int valX = x0 + 260;
-    int valChars = (w - 260) / g_cellW; if (valChars < 4) valChars = 4;
+    // Колонка значений начинается правее самой длинной подписи (в переводах они длиннее английских).
+    int labelChars = 0;
+    for (size_t i = 0; i < kv.size(); i++) labelChars = std::max(labelChars, std::min(30, count_cp(kv[i].k) + 1));
+    int valOff = std::max(260, (labelChars + 2) * g_cellW);
+    int valX = x0 + valOff;
+    int valChars = (w - valOff) / g_cellW; if (valChars < 4) valChars = 4;
     for (size_t i = 0; i < kv.size(); i++) {
         draw_text(fit(kv[i].k + ":", 30), x0, gy + (int)i * 34, C_DIM, C_BG);
         draw_text(fit(kv[i].v, valChars), valX, gy + (int)i * 34, C_TEXT, C_BG);
@@ -793,9 +801,10 @@ static void draw_screen_disk(const DiskView& d, int x0, int w, int y0)
     int nameW = cCur - cName - 2; if (nameW < 10) nameW = 10;
     put_left(x0, cId, tr("id", "ID"), y2, C_DIM, C_BG);
     put_left(x0, cName, tr("name", "Name"), y2, C_DIM, C_BG);
-    put_right(x0, cCur, 6, tr("cur", "Current"), y2, C_DIM, C_BG);
-    put_right(x0, cWorst, 6, tr("worst", "Worst"), y2, C_DIM, C_BG);
-    put_right(x0, cThr, 6, tr("thr", "Thresh"), y2, C_DIM, C_BG);
+    // Подписи колонок до 7 символов (правый край тот же, что у чисел): "Текущее" раньше обрезалось до "Текущ…".
+    put_right(x0, cCur - 1, 7, tr("cur", "Current"), y2, C_DIM, C_BG);
+    put_right(x0, cWorst - 1, 7, tr("worst", "Worst"), y2, C_DIM, C_BG);
+    put_right(x0, cThr - 1, 7, tr("thr", "Thresh"), y2, C_DIM, C_BG);
     put_right(x0, cRaw, 12, tr("raw", "Raw"), y2, C_DIM, C_BG);
     y2 += 26;
     for (size_t i = 0; i < d.attrs.size(); i++) {
@@ -839,12 +848,12 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
         switch (items[i]) {
         case AK_FROM: {
             char b[32]; snprintf(b, sizeof(b), "%llu", (unsigned long long)g_rangeFromGb);
-            label = tr("act_from", "From") + ": " + b + " GB";
+            label = tr("act_from", "From") + ": " + b + " " + tr("gb", "GB");
             break;
         }
         case AK_TO: {
             if (g_rangeToGb == 0) label = tr("act_to", "To") + ": " + tr("act_end", "end");
-            else { char b[32]; snprintf(b, sizeof(b), "%llu", (unsigned long long)g_rangeToGb); label = tr("act_to", "To") + ": " + b + " GB"; }
+            else { char b[32]; snprintf(b, sizeof(b), "%llu", (unsigned long long)g_rangeToGb); label = tr("act_to", "To") + ": " + b + " " + tr("gb", "GB"); }
             break;
         }
         case AK_WHOLE: label = tr("act_whole", "Whole disk"); break;
@@ -903,7 +912,7 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
     struct St { std::string k, v; };
     std::vector<St> stats;
     { char b[32]; snprintf(b, sizeof(b), "%.1f %%", pct); stats.push_back(St{ tr("prog", "Progress"), b }); }
-    stats.push_back(St{ tr("speed", "Speed"), (mine && sc.speed > 0) ? (fmt_num((uint64_t)(sc.speed / 1e6)) + " MB/s") : "—" });
+    stats.push_back(St{ tr("speed", "Speed"), (mine && sc.speed > 0) ? (fmt_num((uint64_t)(sc.speed / 1e6)) + " " + tr("mbps", "MB/s")) : "—" });
     stats.push_back(St{ tr("elapsed", "Elapsed"), mine ? fmt_time(sc.elapsed) : "—" });
     stats.push_back(St{ tr("left", "Remaining"), (mine && job == "scan" && sc.eta >= 0) ? fmt_time((double)sc.eta) : "—" });
     stats.push_back(St{ tr("pos", "Position"), mine ? fmt_size(sc.from + sc.done) : "—" });
@@ -936,23 +945,31 @@ static void draw_screen_scan(const DiskView& d, int x0, int w, int y0, const std
 
 static const int MENU_ITEMS = 4;   // обновить диски / язык / донат / выключить службу
 
+static std::string menu_label(int i)
+{
+    switch (i) {
+    case 0: return tr("menu_refresh", "Refresh disks");
+    case 1: return tr("menu_lang", "Language") + ": " + tr("_name", "English");
+    case 2: return tr("menu_donate", "Support the project");
+    default: return tr("menu_quit", "Shut down the service");
+    }
+}
+
 static void draw_menu_overlay()
 {
-    int w = 460, h = 60 + MENU_ITEMS * 56;
+    // Ширина по самой длинной подписи: переводы бывают заметно длиннее английских.
+    int maxc = 0;
+    for (int i = 0; i < MENU_ITEMS; i++) maxc = std::max(maxc, count_cp(menu_label(i)));
+    int w = std::max(460, maxc * (g_cellW > 0 ? g_cellW : 12) + 80);
+    if (w > FRAME_WIDTH - 200) w = FRAME_WIDTH - 200;
+    int h = 60 + MENU_ITEMS * 56;
     draw_panel(w, h);
     int x = (FRAME_WIDTH - w) / 2, y = (FRAME_HEIGHT - h) / 2;
     for (int i = 0; i < MENU_ITEMS; i++) {
         int ry = y + 30 + i * 56;
         bool cur = (g_menuCursor == i);
         if (cur) fill_rounded(x + 20, ry - 8, w - 40, 44, 10, C_EDGE);
-        std::string label;
-        switch (i) {
-        case 0: label = tr("menu_refresh", "Refresh disks"); break;
-        case 1: label = tr("menu_lang", "Language") + ": " + (i18n_current() == "ru" ? "Русский" : "English"); break;
-        case 2: label = tr("menu_donate", "Support the project"); break;
-        case 3: label = tr("menu_quit", "Shut down the service"); break;
-        }
-        draw_text(label, x + 40, ry + 22, C_TEXT, cur ? C_EDGE : C_PANEL);
+        draw_text(menu_label(i), x + 40, ry + 22, C_TEXT, cur ? C_EDGE : C_PANEL);
     }
     // Пользователь попросил оставить тут только подсказку про Circle - стрелки и Cross и так
     // понятны по месту (строка меню подсвечена), а Circle - единственное, что не очевидно
@@ -1082,13 +1099,15 @@ static void draw_all(uint64_t now)
             yesLbl = tr("yes", "shut down");
         } else if (g_confirm == CONF_SCAN_START) {
             const DiskView* d = sel_disk();
-            title = tr("scan_start_q", "Start scanning disk") + " " + (d ? d->id : "") + "?";
-            char b[256];
-            snprintf(b, sizeof(b), "%.1f GB, ~%s, ~%.0f MB/s. %s",
-                     (double)(g_confirmEst.to - g_confirmEst.from) / 1e9,
+            // Заголовок целиком из перевода (с {d}): знаки вопроса и порядок слов у языков разные.
+            title = tr("cTitle", "Start scanning disk {d}?");
+            { size_t dp = title.find("{d}"); if (dp != std::string::npos) title.replace(dp, 3, d ? d->id : ""); }
+            char b[320];
+            snprintf(b, sizeof(b), "%.1f %s, ~%s, ~%.0f %s. %s",
+                     (double)(g_confirmEst.to - g_confirmEst.from) / 1e9, tr("gb", "GB").c_str(),
                      fmt_time((double)g_confirmEst.seconds).c_str(),
-                     g_confirmEst.speed / 1e6,
-                     tr("cWarn", "The disk and the console will be heavily loaded. No data is modified.").c_str());
+                     g_confirmEst.speed / 1e6, tr("mbps", "MB/s").c_str(),
+                     tr("cWarnShort", "The disk and the console will be heavily loaded. No data is modified.").c_str());
             body = b;
             yesLbl = tr("cYes", "Start scan");
         } else if (g_confirm == CONF_SCAN_STOP) {
@@ -1345,13 +1364,14 @@ void ui_pump()
         if (g_focus == FOCUS_MENU) {
             if (up || down) { g_menuCursor = up ? (g_menuCursor - 1 + MENU_ITEMS) % MENU_ITEMS : (g_menuCursor + 1) % MENU_ITEMS; g_redraw = 2; }
             else if (circle) { g_focus = FOCUS_TABS; g_redraw = 2; }
+            else if ((left || right) && g_menuCursor == 1) { i18n_next(right ? +1 : -1); g_redraw = 2; }   // на строке языка стрелки листают языки
             else if (cross) {
                 if (g_menuCursor == 0) {
                     service_refresh_disks(); g_nextDisks = now + 1500000ULL; g_disksOk = false;
                     g_focus = FOCUS_TABS;
                 } else if (g_menuCursor == 1) {
-                    i18n_set(i18n_current() == "ru" ? "en" : "ru");
-                    // Меню остаётся открытым - можно сразу увидеть новую подпись и переключить обратно.
+                    i18n_next(+1);
+                    // Меню остаётся открытым - можно сразу увидеть новую подпись и листать дальше.
                 } else if (g_menuCursor == 2) {
                     g_showDonate = true; g_focus = FOCUS_TABS;
                 } else {
