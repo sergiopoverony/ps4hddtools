@@ -77,12 +77,12 @@
   "badLba": "Sorunlu sektörler (LBA):",
   "mbps": "MB/sn",
 
-  "h1": "4 ms'ye kadar",
-  "h2": "16 ms'ye kadar",
-  "h3": "40 ms'ye kadar",
-  "h4": "160 ms'ye kadar",
-  "h5": "480 ms'ye kadar",
-  "h6": "480 ms üzeri",
+  "h1": "40 ms'ye kadar",
+  "h2": "160 ms'ye kadar",
+  "h3": "400 ms'ye kadar",
+  "h4": "1,6 sn kadar",
+  "h5": "4,8 sn kadar",
+  "h6": "4,8 sn üzeri",
   "h7": "okuma hatası",
 
   "cTitle": "{d} diskinin taraması başlatılsın mı?",

@@ -238,11 +238,11 @@ bool engine_estimate(const std::string& disk, double from_gb, double to_gb, std:
 // ---------------------------------------------------------------- проверка поверхности
 
 static int bucket_for_ms(double ms) {
-    if (ms <= 4) return 1;
-    if (ms <= 16) return 2;
-    if (ms <= 40) return 3;
-    if (ms <= 160) return 4;
-    if (ms <= 480) return 5;
+    if (ms <= 40) return 1;
+    if (ms <= 160) return 2;
+    if (ms <= 400) return 3;
+    if (ms <= 1600) return 4;
+    if (ms <= 4800) return 5;
     return 6;
 }
 

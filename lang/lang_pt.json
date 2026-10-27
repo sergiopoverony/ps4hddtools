@@ -77,12 +77,12 @@
   "badLba": "Setores com problemas (LBA):",
   "mbps": "MB/s",
 
-  "h1": "até 4 ms",
-  "h2": "até 16 ms",
-  "h3": "até 40 ms",
-  "h4": "até 160 ms",
-  "h5": "até 480 ms",
-  "h6": "mais de 480 ms",
+  "h1": "até 40 ms",
+  "h2": "até 160 ms",
+  "h3": "até 400 ms",
+  "h4": "até 1,6 s",
+  "h5": "até 4,8 s",
+  "h6": "mais de 4,8 s",
   "h7": "erro de leitura",
 
   "cTitle": "Iniciar a verificação do disco {d}?",

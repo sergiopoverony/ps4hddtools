@@ -77,12 +77,12 @@
   "badLba": "Problematische sectoren (LBA):",
   "mbps": "MB/s",
 
-  "h1": "tot 4 ms",
-  "h2": "tot 16 ms",
-  "h3": "tot 40 ms",
-  "h4": "tot 160 ms",
-  "h5": "tot 480 ms",
-  "h6": "meer dan 480 ms",
+  "h1": "tot 40 ms",
+  "h2": "tot 160 ms",
+  "h3": "tot 400 ms",
+  "h4": "tot 1,6 s",
+  "h5": "tot 4,8 s",
+  "h6": "meer dan 4,8 s",
   "h7": "leesfout",
 
   "cTitle": "Scan van schijf {d} starten?",

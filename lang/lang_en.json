@@ -77,12 +77,12 @@
   "badLba": "Problem sectors (LBA):",
   "mbps": "MB/s",
 
-  "h1": "up to 4 ms",
-  "h2": "up to 16 ms",
-  "h3": "up to 40 ms",
-  "h4": "up to 160 ms",
-  "h5": "up to 480 ms",
-  "h6": "over 480 ms",
+  "h1": "up to 40 ms",
+  "h2": "up to 160 ms",
+  "h3": "up to 400 ms",
+  "h4": "up to 1.6 s",
+  "h5": "up to 4.8 s",
+  "h6": "over 4.8 s",
   "h7": "read error",
 
   "cTitle": "Start scanning disk {d}?",

@@ -77,12 +77,12 @@
   "badLba": "Problemsektorer (LBA):",
   "mbps": "MB/s",
 
-  "h1": "opptil 4 ms",
-  "h2": "opptil 16 ms",
-  "h3": "opptil 40 ms",
-  "h4": "opptil 160 ms",
-  "h5": "opptil 480 ms",
-  "h6": "over 480 ms",
+  "h1": "opptil 40 ms",
+  "h2": "opptil 160 ms",
+  "h3": "opptil 400 ms",
+  "h4": "opptil 1,6 s",
+  "h5": "opptil 4,8 s",
+  "h6": "over 4,8 s",
   "h7": "lesefeil",
 
   "cTitle": "Starte skanning av disk {d}?",

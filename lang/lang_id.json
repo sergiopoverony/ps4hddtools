@@ -77,12 +77,12 @@
   "badLba": "Sektor bermasalah (LBA):",
   "mbps": "MB/dtk",
 
-  "h1": "hingga 4 ms",
-  "h2": "hingga 16 ms",
-  "h3": "hingga 40 ms",
-  "h4": "hingga 160 ms",
-  "h5": "hingga 480 ms",
-  "h6": "lebih dari 480 ms",
+  "h1": "hingga 40 ms",
+  "h2": "hingga 160 ms",
+  "h3": "hingga 400 ms",
+  "h4": "hingga 1,6 dtk",
+  "h5": "hingga 4,8 dtk",
+  "h6": "lebih dari 4,8 dtk",
   "h7": "kesalahan baca",
 
   "cTitle": "Mulai memindai disk {d}?",

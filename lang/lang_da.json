@@ -77,12 +77,12 @@
   "badLba": "Problemsektorer (LBA):",
   "mbps": "MB/s",
 
-  "h1": "op til 4 ms",
-  "h2": "op til 16 ms",
-  "h3": "op til 40 ms",
-  "h4": "op til 160 ms",
-  "h5": "op til 480 ms",
-  "h6": "over 480 ms",
+  "h1": "op til 40 ms",
+  "h2": "op til 160 ms",
+  "h3": "op til 400 ms",
+  "h4": "op til 1,6 sek.",
+  "h5": "op til 4,8 sek.",
+  "h6": "over 4,8 sek.",
   "h7": "læsefejl",
 
   "cTitle": "Start scanning af disk {d}?",

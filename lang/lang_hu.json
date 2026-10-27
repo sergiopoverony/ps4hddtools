@@ -77,12 +77,12 @@
   "badLba": "Problémás szektorok (LBA):",
   "mbps": "MB/s",
 
-  "h1": "legfeljebb 4 ms",
-  "h2": "legfeljebb 16 ms",
-  "h3": "legfeljebb 40 ms",
-  "h4": "legfeljebb 160 ms",
-  "h5": "legfeljebb 480 ms",
-  "h6": "több mint 480 ms",
+  "h1": "legfeljebb 40 ms",
+  "h2": "legfeljebb 160 ms",
+  "h3": "legfeljebb 400 ms",
+  "h4": "legfeljebb 1,6 mp",
+  "h5": "legfeljebb 4,8 mp",
+  "h6": "több mint 4,8 mp",
   "h7": "olvasási hiba",
 
   "cTitle": "Elindítja a(z) {d} lemez ellenőrzését?",
