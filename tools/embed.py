@@ -18,6 +18,12 @@ def arr(name, data):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import langs as langs_mod
 langs = langs_mod.load_langs(os.path.join(root, 'lang'))
+# ТОЛЬКО ДЛЯ ДИАГНОСТИКИ: EMBED_LANGS=en,ru - вшить в службу лишь эти языки (ELF станет заметно
+# меньше). Проверка гипотезы «большой ELF не запускается на части консолей».
+_only = os.environ.get('EMBED_LANGS', '').strip()
+if _only:
+    _keep = [c.strip() for c in _only.split(',') if c.strip()]
+    langs = [l for l in langs if l[0] in _keep]
 lang_index = langs_mod.index_bytes(langs)
 
 html = open(os.path.join(root, 'web', 'index.html'), encoding='utf-8').read().replace('__VERSION__', ver).encode('utf-8')
