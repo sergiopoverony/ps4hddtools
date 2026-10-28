@@ -4,6 +4,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 #ifndef HOST_TEST
 struct notify_request_t {
@@ -16,24 +21,40 @@ struct notify_request_t {
 static_assert(sizeof(notify_request_t) == 3120, "notification request size");
 extern "C" int sceKernelSendNotificationRequest(int, notify_request_t*, size_t, int);
 extern "C" int sceSystemServicePowerTick(void);
-extern "C" int sceNetCtlInit(void);
-extern "C" int sceNetCtlGetInfo(int code, void* info);
 #endif
 
 std::string local_ip() {
-#ifdef HOST_TEST
-    return "";
-#else
-    // Как в других payload для PS4: адрес консоли спрашиваем у системной службы сети.
-    sceNetCtlInit();  // если уже инициализирована, вернёт ошибку: это нормально
-    char info[512];
-    memset(info, 0, sizeof(info));
-    if (sceNetCtlGetInfo(14 /* SCE_NET_CTL_INFO_IP_ADDRESS */, info) != 0) return "";
-    info[15] = 0;  // ip_address[16]
-    std::string ip = info;
-    if (ip.empty() || ip == "0.0.0.0" || ip.compare(0, 4, "127.") == 0) return "";
-    return ip;
+    // ВАЖНО: адрес берём только через обычные сокеты, БЕЗ libSceNetCtl. Версия 1.2.0.10-1.3.2.x
+    // вызывала sceNetCtlGetInfo и линковалась с libSceNetCtl.sprx - на части консолей (проверено
+    // тестерами: PS4 Pro 11.00 и др.) загрузчик payload'ов не может подгрузить этот модуль,
+    // и служба вообще не доходит до main() ("payload started" и тишина, папки /data/ps4hddtools нет).
+    // Адрес, с которого консоль вышла бы в сеть: UDP-сокет «подключается» к внешнему адресу
+    // (пакеты не отправляются) и спрашивает свой адрес. Без сети/маршрута вернёт пустую строку.
+    std::string found;
+#ifndef HOST_TEST
+    int s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) return found;
+    struct sockaddr_in to;
+    memset(&to, 0, sizeof(to));
+    to.sin_family = AF_INET;
+    to.sin_port = htons(53);
+    to.sin_addr.s_addr = htonl(0x08080808);  // 8.8.8.8
+    if (connect(s, (struct sockaddr*)&to, sizeof(to)) == 0) {
+        struct sockaddr_in me;
+        socklen_t l = sizeof(me);
+        memset(&me, 0, sizeof(me));
+        if (getsockname(s, (struct sockaddr*)&me, &l) == 0) {
+            uint32_t a = ntohl(me.sin_addr.s_addr);
+            if ((a >> 24) != 127 && a != 0) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%u.%u.%u.%u", (a >> 24) & 255, (a >> 16) & 255, (a >> 8) & 255, a & 255);
+                found = buf;
+            }
+        }
+    }
+    close(s);
 #endif
+    return found;
 }
 
 void notify(const char* fmt, ...) {
