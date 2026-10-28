@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <unistd.h>
 
 #ifndef HOST_TEST
@@ -24,35 +26,53 @@ extern "C" int sceSystemServicePowerTick(void);
 #endif
 
 std::string local_ip() {
-    // ВАЖНО: адрес берём только через обычные сокеты, БЕЗ libSceNetCtl. Версия 1.2.0.10-1.3.2.x
-    // вызывала sceNetCtlGetInfo и линковалась с libSceNetCtl.sprx - на части консолей (проверено
-    // тестерами: PS4 Pro 11.00 и др.) загрузчик payload'ов не может подгрузить этот модуль,
-    // и служба вообще не доходит до main() ("payload started" и тишина, папки /data/ps4hddtools нет).
-    // Адрес, с которого консоль вышла бы в сеть: UDP-сокет «подключается» к внешнему адресу
-    // (пакеты не отправляются) и спрашивает свой адрес. Без сети/маршрута вернёт пустую строку.
+    // ВАЖНО: адрес берём только через обычные сокеты/интерфейсы, БЕЗ libSceNetCtl. Версии
+    // 1.2.0.10-1.3.2.5 вызывали sceNetCtlGetInfo и линковались с libSceNetCtl.sprx - на части
+    // консолей (по отчётам тестеров) payload при этом вообще не доходит до main() ("payload
+    // started" и тишина, папки /data/ps4hddtools нет). Тот же способ, что в ps4torrent.
     std::string found;
 #ifndef HOST_TEST
+    auto fmt = [](uint32_t be) {
+        uint32_t a = ntohl(be);
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%u.%u.%u.%u", (a >> 24) & 255, (a >> 16) & 255, (a >> 8) & 255, a & 255);
+        return std::string(buf);
+    };
+    // 1) Список интерфейсов: работает и без интернета, лишь бы был адрес в локальной сети.
+    struct ifaddrs* ifa = nullptr;
+    if (getifaddrs(&ifa) == 0) {
+        for (struct ifaddrs* p = ifa; p; p = p->ifa_next) {
+            if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET) continue;
+            if (!(p->ifa_flags & IFF_UP) || (p->ifa_flags & IFF_LOOPBACK)) continue;
+            uint32_t sa = ((struct sockaddr_in*)p->ifa_addr)->sin_addr.s_addr;
+            uint32_t h = ntohl(sa);
+            if (h == 0 || (h >> 24) == 127 || (h >> 16) == 0xA9FE) continue;   // пусто, loopback, link-local
+            found = fmt(sa);
+            break;
+        }
+        freeifaddrs(ifa);
+    }
+    if (!found.empty()) return found;
+    // 2) Запасной способ: UDP «подключение» к внешнему адресу ничего не отправляет, но выбирает
+    //    маршрут и адрес.
     int s = socket(AF_INET, SOCK_DGRAM, 0);
-    if (s < 0) return found;
-    struct sockaddr_in to;
-    memset(&to, 0, sizeof(to));
-    to.sin_family = AF_INET;
-    to.sin_port = htons(53);
-    to.sin_addr.s_addr = htonl(0x08080808);  // 8.8.8.8
-    if (connect(s, (struct sockaddr*)&to, sizeof(to)) == 0) {
-        struct sockaddr_in me;
-        socklen_t l = sizeof(me);
-        memset(&me, 0, sizeof(me));
-        if (getsockname(s, (struct sockaddr*)&me, &l) == 0) {
-            uint32_t a = ntohl(me.sin_addr.s_addr);
-            if ((a >> 24) != 127 && a != 0) {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "%u.%u.%u.%u", (a >> 24) & 255, (a >> 16) & 255, (a >> 8) & 255, a & 255);
-                found = buf;
+    if (s >= 0) {
+        struct sockaddr_in to;
+        memset(&to, 0, sizeof(to));
+        to.sin_family = AF_INET;
+        to.sin_port = htons(53);
+        to.sin_addr.s_addr = htonl(0x08080808);  // 8.8.8.8
+        if (connect(s, (struct sockaddr*)&to, sizeof(to)) == 0) {
+            struct sockaddr_in me;
+            socklen_t l = sizeof(me);
+            memset(&me, 0, sizeof(me));
+            if (getsockname(s, (struct sockaddr*)&me, &l) == 0) {
+                uint32_t h = ntohl(me.sin_addr.s_addr);
+                if (h != 0 && (h >> 24) != 127) found = fmt(me.sin_addr.s_addr);
             }
         }
+        close(s);
     }
-    close(s);
 #endif
     return found;
 }
